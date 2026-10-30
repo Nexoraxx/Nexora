@@ -3,7 +3,7 @@ import { injectable } from "inversify";
 import { HTTPException } from 'hono/http-exception'
 import { API, CloseReason, Zalo, type Credentials, type LoginQRCallback } from '@hwqnq/zca-js';
 import { ZcaEvents } from './types';
-import { API_TYPE, API_VERSION } from './constants';
+import { API_TYPE, API_VERSION, USER_AGENT } from './constants';
 import { tapControls } from './controls';
 
 // selfListen: actions done on the phone (accept, block, ...) must reach us too
@@ -18,7 +18,7 @@ export class ZcaService extends EventEmitter<ZcaEvents> {
     }
 
     loginQR(callback: LoginQRCallback) {
-        return newZalo().loginQR(undefined, callback)
+        return newZalo().loginQR({ userAgent: USER_AGENT }, callback)
     }
 
     get(accountId: string) {

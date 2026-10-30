@@ -1,9 +1,6 @@
-const PLATFORM =
-  process.platform === 'win32' ? 'Windows NT 10.0; Win64; x64'
-  : process.platform === 'darwin' ? 'Macintosh; Intel Mac OS X 10_15_7'
-  : 'X11; Linux x86_64'
-
-export const USER_AGENT = `Mozilla/5.0 (${PLATFORM}) AppleWebKit/537.36 (KHTML, like Gecko) Zalo/26.10.20 Chrome/108.0.5359.215 Electron/22.3.27 Safari/537.36`
-// Zalo PC (Windows). 25 is PC's LINUX_CLIENT_TYPE, never released: Zalo answers its E2EE GET_BUNDLE with 112
-export const API_TYPE = 24
+// Zalo PC's getClientType: macOS 23, Windows 24, Linux 25. The Linux client was never released and Zalo's E2EE server
+// answers its GET_BUNDLE with 112, so on Linux this client is Zalo PC for macOS.
+export const API_TYPE = process.platform === 'win32' ? 24 : 23
 export const API_VERSION = 694
+// Zalo PC's user agent (ZaloPC-<process.platform>-<type>v<version>), naming the platform API_TYPE claims
+export const USER_AGENT = `ZaloPC-${process.platform === 'win32' ? 'win32' : 'darwin'}-${API_TYPE}v${API_VERSION}`
