@@ -90,3 +90,8 @@ test('the E2EE offline queues named in the auth frame are pulled from the last a
   expect(e2ee.state('me', 'peer2')).toBe('on')
   expect(ws.sent.find((s) => s.cmd === 545)?.body.data).toEqual({ queueName: '', info: [{ gid: '3', cmd: 581, subCmd: 0, sid: 'peer2', deviceId: 0 }] })
 })
+
+test('turning E2EE on waits until this device is set up', () => {
+  const { e2ee } = setup()
+  expect(() => e2ee.enable('me', 'peer')).toThrow('E2EE not initialized')
+})

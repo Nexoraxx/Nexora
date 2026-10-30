@@ -71,6 +71,7 @@ export default interface IMessageRepository {
   group(accountId: string, groupId: string): { setting: string | null; creatorId: string | null } | null
   phoneNumber(accountId: string, userId: string): { phoneNumber: string | null } | null
   displayName(accountId: string, userId: string): string | null
+  relation(accountId: string, userId: string): { isFr: number | null; isBlocked: number | null } | null
   avatar(accountId: string, userId: string): string
   isGroup(accountId: string, threadId: string): boolean
 }

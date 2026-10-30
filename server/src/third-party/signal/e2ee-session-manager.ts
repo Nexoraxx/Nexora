@@ -10,6 +10,11 @@ const REQUEST_OP_KEYS = 1
 const REQUEST_BUNDLE = 2
 // NOTIFY_DELETE_KEY: 3 = re-init now; 0 (stale) and 1 (downgrade) drop the session until the next send
 const DELETE_REINIT = 3
+// PC's UPGRADING_TIMEOUT: how long a manual upgrade waits for the peer's ack before calling it pending
+const UPGRADING_TIMEOUT = 10_000
+
+// rebuild: new sessions even where one exists; forwardSubdevice: the INIT lists our other devices
+type BuildOptions = { rebuild?: boolean; isReInit?: boolean; msgInfoNoti?: boolean; forwardSubdevice?: boolean }
 
 const ab = (b: Buffer) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
 
@@ -18,6 +23,8 @@ const ab = (b: Buffer) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLeng
 // conversation's E2EE is turned on or off.
 export class E2eeSessionManager extends EventEmitter {
   private building = new Map<string, Promise<E2eeMeta>>()
+  // manual upgrades waiting for the peer's ACK
+  private acks = new Map<string, () => void>()
 
   constructor(
     private accountId: string,
@@ -121,17 +128,17 @@ export class E2eeSessionManager extends EventEmitter {
   }
 
   // GET_BUNDLE, then a session and an INIT (543) for each device not yet set up; one build per uid at a time
-  buildSessions(uid: string, reinit = false): Promise<E2eeMeta> {
+  buildSessions(uid: string, opts: BuildOptions = {}): Promise<E2eeMeta> {
     const running = this.building.get(uid)
     if (running) return running
-    const build = this.build(uid, reinit).finally(() => this.building.delete(uid))
+    const build = this.build(uid, opts).finally(() => this.building.delete(uid))
     this.building.set(uid, build)
     return build
   }
 
-  private async build(uid: string, reinit: boolean) {
+  private async build(uid: string, { rebuild = false, isReInit = false, msgInfoNoti = false, forwardSubdevice = false }: BuildOptions) {
     const lib = getLibSignal()
-    const bundles: DeviceBundle[] = await this.rpc.getBundle(uid, reinit)
+    const bundles: DeviceBundle[] = await this.rpc.getBundle(uid, { isReInit, msgInfoNoti })
     const devices: E2eeMeta['devices'] = []
     const inits: { deviceId: number; data: string }[] = []
     for (const b of bundles) {
@@ -139,7 +146,7 @@ export class E2eeSessionManager extends EventEmitter {
       // a device without keys can't be written to; our own PC slot is this client
       if (!b.preKey || (uid === this.accountId && deviceId === PC_DEVICE)) continue
       const regId = Number(b.preKey.iKey.id)
-      if (reinit || (await this.sessionRegId(uid, deviceId)) !== regId) {
+      if (rebuild || (await this.sessionRegId(uid, deviceId)) !== regId) {
         const opKey = b.opKeys?.[0]
         await new lib.SessionBuilder(this.store, this.address(uid, deviceId)).processPreKey({
           registrationId: regId,
@@ -147,7 +154,7 @@ export class E2eeSessionManager extends EventEmitter {
           signedPreKey: { keyId: b.preKey.spKey.id, publicKey: fromBase64(b.preKey.spKey.key), signature: fromBase64(b.preKey.signature) },
           preKey: opKey && { keyId: opKey.id, publicKey: fromBase64(opKey.key) },
         })
-        inits.push({ deviceId, data: (await this.encrypt(uid, deviceId, JSON.stringify({ subDevice: this.mySubDevices() }))).cipher })
+        inits.push({ deviceId, data: (await this.encrypt(uid, deviceId, JSON.stringify({ subDevice: forwardSubdevice ? this.mySubDevices() : [] }))).cipher })
       }
       devices.push({ deviceId, regId })
     }
@@ -178,6 +185,7 @@ export class E2eeSessionManager extends EventEmitter {
         // the peer could not read our init: its device gets a fresh session on the next send
         if (s.type === ACK_TYPE.FAILED) return this.dropDevice(s.uidFrom, s.deviceId)
         if (s.data) await this.decrypt(s.uidFrom, s.deviceId, s.data)
+        this.acks.get(s.uidFrom)?.()
         return
       case SIGNAL_CMD.REQUEST_PREKEYS:
         if (s.type === REQUEST_OP_KEYS) await this.replenishPreKeys()
@@ -185,7 +193,7 @@ export class E2eeSessionManager extends EventEmitter {
         return this.rpc.doneProcess(e, cmd)
       case SIGNAL_CMD.NOTIFY_DELETE_KEY:
         this.dropDevice(s.uidFrom, s.deviceId)
-        if (s.deleteType === DELETE_REINIT) await this.buildSessions(s.uidFrom, true)
+        if (s.deleteType === DELETE_REINIT) await this.buildSessions(s.uidFrom, { rebuild: true, isReInit: true })
         return this.rpc.doneProcess(e, cmd)
       case SIGNAL_CMD.DISABLE_E2EE:
         if (s.threadId) this.setStatus(s.threadId, false)
@@ -193,7 +201,7 @@ export class E2eeSessionManager extends EventEmitter {
       case SIGNAL_CMD.ENABLE_E2EE:
         if (s.data) {
           this.setStatus(s.data, true)
-          await this.buildSessions(s.data, true).catch((err) => console.error(`[e2ee] enable ${s.data}`, err))
+          await this.buildSessions(s.data, { rebuild: true, isReInit: true }).catch((err) => console.error(`[e2ee] enable ${s.data}`, err))
         }
         return this.rpc.doneProcess(e, cmd)
     }
@@ -219,6 +227,24 @@ export class E2eeSessionManager extends EventEmitter {
       await this.rpc.ackSession(uid, deviceId, ts, { iid: this.store.registrationId() ?? 0 }, ACK_TYPE.FAILED)
     } finally {
       await this.rpc.doneProcess(e, SIGNAL_CMD.INIT_SESSION)
+    }
+  }
+
+  // Zalo PC's manual upgrade (initSessionWith(uid, -1, isManualUpgrade)): new sessions with every device of uid, the
+  // server told to notify the peer (msgInfoNoti), INITs listing our other devices, E2EE on. 'complete' once the peer
+  // acks, 'pending' while it is away (PC: "Mã hóa hoàn tất khi … truy cập Zalo").
+  async enable(uid: string, ackTimeoutMs = UPGRADING_TIMEOUT): Promise<'complete' | 'pending'> {
+    await this.devices(this.accountId)
+    const acked = new Promise<'complete'>((resolve) => this.acks.set(uid, () => resolve('complete')))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const { devices } = await this.buildSessions(uid, { rebuild: true, msgInfoNoti: true, forwardSubdevice: true })
+      if (!devices?.length) throw Object.assign(new Error(`${uid} has no E2EE device`), { code: 'NO_DEVICE' })
+      this.setStatus(uid, true)
+      return await Promise.race([acked, new Promise<'pending'>((resolve) => (timer = setTimeout(() => resolve('pending'), ackTimeoutMs)))])
+    } finally {
+      clearTimeout(timer)
+      this.acks.delete(uid)
     }
   }
 

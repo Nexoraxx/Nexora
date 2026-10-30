@@ -111,6 +111,13 @@ export class E2eeService extends EventEmitter<Events> {
     return (await this.accounts.get(accountId)?.receiver.decrypt(m, isSelf)) ?? {}
   }
 
+  // turns E2EE on with uid (Zalo PC's manual upgrade) once this device's keys and Zalo's list are in
+  enable(accountId: string, uid: string) {
+    const a = this.accounts.get(accountId)
+    if (!a?.listLoaded) throw Object.assign(new Error('E2EE not initialized'), { code: 'not_ready' })
+    return a.sessions.enable(uid)
+  }
+
   sendText(accountId: string, api: API, uid: string, text: string, styles?: unknown[]) {
     const a = this.accounts.get(accountId)
     if (!a) throw new Error('Mã hóa đầu cuối chưa sẵn sàng')

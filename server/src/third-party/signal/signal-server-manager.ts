@@ -43,7 +43,8 @@ export type E2eeList = { threads?: { uid: string; devices?: { di: number; iid: n
 type Reply = { error_code?: number; data?: { reqId?: string; data?: { err?: number; [key: string]: unknown } } }
 type Pending = { resolve: (data: Record<string, unknown> | undefined) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 
-const failure = (cmd: number, code: unknown) => Object.assign(new Error(`Signal ${cmd} lỗi ${code}`), { code: Number(code) })
+// code: Zalo's error number, or 'timeout' when no reply came
+const failure = (cmd: number, code: unknown) => Object.assign(new Error(`Signal ${cmd} lỗi ${code}`), { code })
 
 // Zalo PC's signal-server-manager: request/response over the chat socket, matched by reqId; frames without a pending
 // reqId are server pushes, emitted as ('push', cmd, data).
@@ -122,12 +123,12 @@ export class SignalServerManager extends EventEmitter {
     return this.request(SIGNAL_CMD.SUBMIT_PREKEYS, { deviceId: 2, id: regId, opKeys })
   }
 
-  // every device of uid (deviceId -1)
-  async getBundle(uid: string, isReInit = false): Promise<DeviceBundle[]> {
+  // every device of uid (deviceId -1); msgInfoNoti: a manual upgrade the server tells the peer about
+  async getBundle(uid: string, { isReInit = false, msgInfoNoti = false } = {}): Promise<DeviceBundle[]> {
     const d = await this.request<{ keys?: { uid: string; keys?: DeviceBundle[] }[] }>(SIGNAL_CMD.GET_BUNDLE, {
       uids: [{ uid, deviceId: -1 }],
       isReInit: isReInit ? 1 : 0,
-      msgInfoNoti: 0,
+      msgInfoNoti: msgInfoNoti ? 1 : 0,
       isAutoUpgrade: 0,
     })
     return d?.keys?.find((k) => String(k.uid) === uid)?.keys ?? []

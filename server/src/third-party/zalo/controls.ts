@@ -53,7 +53,7 @@ export function tapFrames(listener: API['listener'], onFrame: (cmd: number, subC
 // Zalo PC's socket _send: header, then only the JSON of data
 export function sendFrame(listener: API['listener'], cmd: number, subCmd: number, data: unknown) {
   const ws = (listener as unknown as Internals).ws
-  if (!ws || ws.readyState !== ws.OPEN) throw new Error('Mất kết nối tới máy chủ')
+  if (!ws || ws.readyState !== ws.OPEN) throw Object.assign(new Error('Mất kết nối tới máy chủ'), { code: 'offline' })
   const head = Buffer.alloc(4)
   head[0] = 1
   head.writeUInt16LE(cmd, 1)

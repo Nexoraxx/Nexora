@@ -4,6 +4,7 @@ import {
   BellOffIcon,
   ClockIcon,
   EllipsisIcon,
+  LockIcon,
   LogOutIcon,
   PencilIcon,
   PinIcon,
@@ -28,6 +29,7 @@ import { Report } from "@/app/profile/components/report/report";
 import { Toggle } from "@/app/chat/components/info/info-toggle";
 import { Section } from "@/app/chat/components/info/info-section";
 import { AutoDeleteDialog } from "@/app/chat/components/info/auto-delete-dialog";
+import { E2eeDialog } from "@/app/chat/components/info/e2ee-dialog";
 import { GroupLinkSection } from "@/app/chat/components/info/group-link-section";
 import { MediaSection } from "@/app/chat/components/info/media-section";
 import { PendingDialog } from "@/app/chat/components/info/pending-dialog";
@@ -70,6 +72,7 @@ export function ConversationInfo({
   accountId,
   target,
   cloud,
+  e2ee,
   settings,
   onProfile,
   onOpen,
@@ -80,6 +83,8 @@ export function ConversationInfo({
   target: ChatTarget;
   // "Cloud của tôi": PC shows no mute, auto-delete, alias or report for it
   cloud?: boolean;
+  // end-to-end encrypted (1-1)
+  e2ee?: boolean;
   settings: ConversationSettings;
   onProfile: (userId: string) => void;
   onOpen: (t: ChatTarget) => void;
@@ -93,6 +98,7 @@ export function ConversationInfo({
   const [user, setUser] = useState<UserProfile>();
   const [renaming, setRenaming] = useState<string>();
   const [ttlOpen, setTtlOpen] = useState(false);
+  const [e2eeOpen, setE2eeOpen] = useState(false);
   const [dialog, setDialog] = useState<"add" | "pending" | "blocked" | "leave" | "report" | "invite">();
   const [ask, setAsk] = useState<Ask>();
   const [error, setError] = useState<string>();
@@ -266,8 +272,24 @@ export function ConversationInfo({
                 <div className="text-xs text-muted-foreground">{ttl ? ttlText(ttl) : "Không bao giờ"}</div>
               </div>
             </button>
+            {/* Zalo PC's "Mã hóa đầu cuối" row: 1-1 only; once on it stays on */}
+            {!target.isGroup && (
+              <button
+                className="flex w-full items-center gap-3 px-4 py-1.5 text-left hover:bg-muted disabled:hover:bg-transparent"
+                disabled={e2ee}
+                title={e2ee ? "Tin nhắn được mã hóa trong suốt quá trình gửi và nhận" : "Kích hoạt tính năng để tăng cường bảo mật cho hội thoại"}
+                onClick={() => setE2eeOpen(true)}
+              >
+                <LockIcon className={e2ee ? "size-5 text-emerald-600" : "size-5 text-muted-foreground"} />
+                <div>
+                  <div>Mã hóa đầu cuối</div>
+                  <div className="text-xs text-muted-foreground">{e2ee ? "Đã nâng cấp" : "Chưa nâng cấp"}</div>
+                </div>
+              </button>
+            )}
           </Section>
         )}
+        {e2eeOpen && <E2eeDialog base={base} threadId={id} name={name} onClose={() => setE2eeOpen(false)} />}
         {ttlOpen && (
           <AutoDeleteDialog
             current={ttl}

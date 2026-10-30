@@ -66,6 +66,7 @@ const setup = () => {
     state: (_: string, id: string) => states[id] ?? 'off',
     decrypt: mock(async (_: string, m: { cliMsgId: string }) => decrypted[m.cliMsgId] ?? {}),
     sendText: mock(async () => ({ msgId: '600', cliMsgId: 'c600', content: 'kín' })),
+    enable: mock(async (): Promise<'complete' | 'pending'> => 'pending'),
   })
   const messages = new MessageService(db, new MessageRepository(db), zca, contacts as unknown as IContactService, conversations as unknown as IConversationService, e2ee as unknown as E2eeService)
   return { db, api, zca, contacts, ttls, forwardUtils, e2ee, states, decrypted, messages }
@@ -425,4 +426,23 @@ test("E2EE messages from the offline queue and the preload are decrypted; the th
     ['lúc offline', true],
     ['preload', false],
   ])
+})
+
+test("turning E2EE on, as PC: only for a friend's 1-1 chat that isn't blocked; Zalo's failures come back in PC's words", async () => {
+  const { db, e2ee, messages } = setup()
+  db.run(`INSERT INTO user (accountId, userId, displayName, isFr, isBlocked) VALUES ('me', 'f1', 'Bạn A', 1, 0), ('me', 'f2', 'Bạn B', 1, 1)`)
+  await expect(messages.enableE2ee(ME, 'g1')).rejects.toThrow('trò chuyện 2 người')
+  await expect(messages.enableE2ee(ME, 'u1')).rejects.toThrow('Tính năng hiện không khả dụng')
+  await expect(messages.enableE2ee(ME, 'f2')).rejects.toThrow('bỏ chặn')
+  expect(e2ee.enable).not.toHaveBeenCalled()
+  expect(await messages.enableE2ee(ME, 'f1')).toEqual({ status: 'pending' })
+  expect(e2ee.enable).toHaveBeenCalledWith(ME, 'f1')
+  e2ee.enable.mockImplementationOnce(async () => {
+    throw Object.assign(new Error('x'), { code: 'NO_DEVICE' })
+  })
+  await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Bạn A không nằm trong danh sách thử nghiệm tính năng Mã hóa đầu cuối')
+  e2ee.enable.mockImplementationOnce(async () => {
+    throw Object.assign(new Error('x'), { code: 'timeout' })
+  })
+  await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Hãy kiểm tra lại kết nối mạng và thử lại')
 })

@@ -759,6 +759,29 @@ export default class MessageService implements IMessageService {
     if (!out) await this.contacts.refreshGroup(accountId, groupId)
   }
 
+  // Zalo PC's "Mã hóa đầu cuối" upgrade of a 1-1 chat: friends only (PC's allow_stranger_chat is off), not while
+  // blocked. 'pending': on, completing once the peer opens Zalo.
+  async enableE2ee(accountId: string, threadId: string) {
+    if (this.messages.isGroup(accountId, threadId) || this.isMyCloud(accountId, threadId)) throw new HTTPException(400, { message: 'Chỉ trò chuyện 2 người mới mã hóa đầu cuối được' })
+    const rel = this.messages.relation(accountId, threadId)
+    if (rel?.isBlocked) throw new HTTPException(400, { message: 'Tính năng này hiện không khả dụng, vui lòng bỏ chặn sau đó thử lại sau' })
+    if (!rel?.isFr) throw new HTTPException(400, { message: 'Tính năng hiện không khả dụng. Vui lòng thử lại sau.' })
+    try {
+      return { status: await this.e2ee.enable(accountId, threadId) }
+    } catch (e) {
+      const code = (e as { code?: unknown }).code
+      if (code === 'not_ready') throw new HTTPException(409, { message: 'Đang thiết lập cấu hình mã hóa đầu cuối, vui lòng thử lại sau' })
+      const message =
+        code === 'NO_DEVICE'
+          ? `${this.messages.displayName(accountId, threadId) ?? threadId} không nằm trong danh sách thử nghiệm tính năng Mã hóa đầu cuối. Hãy thử nâng cấp với trò chuyện khác.`
+          : code === 'timeout' || code === 'offline'
+            ? 'Hãy kiểm tra lại kết nối mạng và thử lại'
+            : 'Vui lòng thử lại'
+      console.error(`[${accountId}] e2ee upgrade ${threadId}`, e)
+      throw new HTTPException(502, { message })
+    }
+  }
+
   // left or dispersed: the group and its conversation go (PC's storage.deleteGroup)
   leftGroup(accountId: string, groupId: string) {
     this.forgetThreads(accountId, [groupId])

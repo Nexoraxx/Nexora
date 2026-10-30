@@ -240,3 +240,38 @@ test('E2EE list, enable, disable and delete-key pushes keep the conversation sta
   expect(await alice.store.loadSession('bob_2.2')).toBeUndefined()
   expect(zalo.sent(545).map((c) => c.data.info[0].cmd)).toEqual([580, 581, 548])
 })
+
+test('turning E2EE on (PC\'s manual upgrade): every device of the peer gets an INIT listing our other devices; complete once acked, pending until then', async () => {
+  const { zalo, db, alice, bob } = await setup()
+  const alicePhoneDb = openDatabase(':memory:')
+  account(alicePhoneDb, 'alice')
+  await device(zalo, alicePhoneDb, 'alice', 0).sessions.submitNewBundle()
+
+  // bob is away: no ack in time
+  expect(await alice.sessions.enable('bob', 50)).toBe('pending')
+  expect(alice.store.meta('bob').status).toBe(1)
+  const bundleReq = zalo.sent(541).find((c) => c.uid === 'alice' && c.data.uids[0].uid === 'bob')!
+  expect(bundleReq.data).toMatchObject({ isReInit: 0, msgInfoNoti: 1 })
+  const init = zalo.sent(543).find((c) => c.data.uidTo === 'bob')!
+  expect(init.data.type).toBe(1)
+  expect(JSON.parse(await bob.sessions.decrypt('alice', 2, init.data.data[0].data))).toEqual({ subDevice: [0] })
+
+  // carol is online: she acks while we wait
+  account(db, 'carol')
+  const carol = device(zalo, db, 'carol')
+  await carol.sessions.ensureRegistered()
+  const enabling = alice.sessions.enable('carol', 5_000)
+  while (!zalo.sent(543).some((c) => c.data.uidTo === 'carol')) await Bun.sleep(5)
+  const toCarol = zalo.sent(543).find((c) => c.data.uidTo === 'carol')!
+  await carol.sessions.onSessionEvents(543, [{ msgId: '2', sessionData: { uidFrom: 'alice', deviceId: 2, data: toCarol.data.data[0].data } }])
+  expect(carol.store.meta('alice').status).toBe(1)
+  const ack = zalo.sent(544).find((c) => c.uid === 'carol')!
+  await alice.sessions.onSessionEvents(544, [{ msgId: '3', sessionData: { uidFrom: 'carol', deviceId: 2, type: 1, data: ack.data.data[0].data } }])
+  expect(await enabling).toBe('complete')
+})
+
+test('turning E2EE on fails for a peer with no E2EE device', async () => {
+  const { alice } = await setup()
+  await expect(alice.sessions.enable('nobody', 50)).rejects.toMatchObject({ code: 'NO_DEVICE' })
+  expect(alice.store.meta('nobody').status).toBe(0)
+})

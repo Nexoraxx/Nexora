@@ -28,4 +28,5 @@ export default interface IMessageService {
   markSeen(accountId: string, threadId: string): Promise<void>
   typing(accountId: string, threadId: string): Promise<void>
   leftGroup(accountId: string, groupId: string): void
+  enableE2ee(accountId: string, threadId: string): Promise<{ status: 'complete' | 'pending' }>
 }

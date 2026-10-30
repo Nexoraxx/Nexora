@@ -514,6 +514,7 @@ export function Conversation({
             accountId={accountId}
             target={target}
             cloud={isCloud}
+            e2ee={live?.e2ee}
             settings={settings}
             onProfile={onProfile}
             onOpen={onOpen}

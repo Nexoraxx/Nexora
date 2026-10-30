@@ -235,6 +235,10 @@ export default class MessageRepository implements IMessageRepository {
       .get({ a: accountId, t: threadId })
   }
 
+  relation(accountId: string, userId: string) {
+    return this.db.query<{ isFr: number | null; isBlocked: number | null }, [string, string]>(`SELECT isFr, isBlocked FROM user WHERE accountId = ? AND userId = ?`).get(accountId, userId)
+  }
+
   private updatePreview(row: Row, isGroup: boolean) {
     this.db
       .query(

@@ -18,6 +18,8 @@ import {
 export const conversationRoutes = (conversations: IConversationService, messages: IMessageService) =>
   new Hono()
     .get('/conversations', (c) => c.json(conversations.settings(c.req.param('accountId')!)))
+    // Zalo PC "Mã hóa đầu cuối": turn it on for a 1-1 chat; status 'complete' (peer acked) or 'pending'
+    .post('/conversations/:threadId/e2ee', async (c) => c.json(await messages.enableE2ee(c.req.param('accountId')!, c.req.param('threadId'))))
     .put('/conversations/:threadId/pin', async (c) => {
       const { isGroup, pinned } = PinRequest.parse(await c.req.json())
       await conversations.setPinned(c.req.param('accountId')!, c.req.param('threadId'), isGroup, pinned)
