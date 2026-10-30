@@ -22,8 +22,13 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
   const c = attach(m.content);
   switch (m.msgType) {
     case E2EE:
-      return (
-        <span className="flex items-center gap-1.5 text-muted-foreground italic" title="Nexora chưa hỗ trợ mã hóa đầu cuối: hãy đọc tin này trên điện thoại">
+      // e2eeStatus set: decryption was tried and failed; unset: a type Nexora can't decrypt yet
+      return m.e2eeStatus ? (
+        <span className="flex items-center gap-1.5 text-muted-foreground italic">
+          <LockIcon className="size-3.5" /> Giải mã tin nhắn không thành công.
+        </span>
+      ) : (
+        <span className="flex items-center gap-1.5 text-muted-foreground italic" title="Nexora chưa đọc được loại tin nhắn mã hóa này: hãy xem trên điện thoại">
           <LockIcon className="size-3.5" /> Tin nhắn được mã hoá đầu cuối
         </span>
       );

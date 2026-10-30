@@ -33,6 +33,8 @@ export function getLibSignal() {
   fn(undefined)
 
   libsignalInstance = win.libsignal
+  // Zalo's server-configured max_message_keys (the library default is 2000)
+  libsignalInstance.setConfig('max_message_keys', 10_000)
   return libsignalInstance
 }
 

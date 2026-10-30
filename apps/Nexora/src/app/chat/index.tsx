@@ -170,8 +170,8 @@ export function Chat({
                         <div className="flex justify-between gap-2">
                           <span className={cn("truncate inline-flex items-center gap-1", (t.unread || dot) && "font-semibold")}>
                             {t.name ?? t.threadId}
-                            {t.e2eeStatus === 1 && (
-                              <span title="Mã hóa đầu cuối" className="inline-flex items-center">
+                            {t.e2ee && (
+                              <span title="Đã mã hóa đầu cuối" className="inline-flex items-center">
                                 <LockIcon className="size-3 text-emerald-600 shrink-0" />
                               </span>
                             )}

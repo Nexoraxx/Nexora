@@ -8,6 +8,8 @@ import type IConversationService from '../conversations/services/interfaces/conv
 import MessageRepository from './repositories/implements/message-repository'
 import MessageService from './services/implements/message-service'
 import { SendMessageRequest } from './dtos/requests/message.request'
+import type { E2eeService, E2eeState } from '../../third-party/signal/e2ee-service'
+import type { Decrypted } from '../../third-party/signal/e2ee-message-receiver'
 
 const ME = 'me'
 const raw = (msgId: string, from: string, to: string, content: unknown = `text ${msgId}`) =>
@@ -57,7 +59,16 @@ const setup = () => {
   const contacts = { ensureKnown: async () => false, refreshGroup: mock(async () => {}), forgetGroup: mock(() => {}) }
   const ttls: Record<string, number> = {}
   const conversations = { ttl: (_: string, threadId: string) => ttls[threadId] ?? 0 }
-  return { db, api, zca, contacts, ttls, forwardUtils, messages: new MessageService(db, new MessageRepository(db), zca, contacts as unknown as IContactService, conversations as unknown as IConversationService) }
+  // E2EE stand-in: per-thread state, decryption by cliMsgId
+  const states: Record<string, E2eeState> = {}
+  const decrypted: Record<string, Decrypted> = {}
+  const e2ee = Object.assign(new EventEmitter(), {
+    state: (_: string, id: string) => states[id] ?? 'off',
+    decrypt: mock(async (_: string, m: { cliMsgId: string }) => decrypted[m.cliMsgId] ?? {}),
+    sendText: mock(async () => ({ msgId: '600', cliMsgId: 'c600', content: 'kín' })),
+  })
+  const messages = new MessageService(db, new MessageRepository(db), zca, contacts as unknown as IContactService, conversations as unknown as IConversationService, e2ee as unknown as E2eeService)
+  return { db, api, zca, contacts, ttls, forwardUtils, e2ee, states, decrypted, messages }
 }
 const thread = (s: MessageService, id: string) => s.threads(ME, 50).find((t) => t.threadId === id)
 
@@ -355,15 +366,63 @@ test('end-to-end encrypted messages (cmd 551) are kept as chat.e2ee, out of sear
   expect(messages.search(ME, 'u1', { q: cipher, limit: 20, offset: 0 } as never)).toEqual([])
 })
 
-test('end-to-end encrypted messages (cmd 551) are decrypted and stored with e2eeStatus: 1 when deciphered cache available', async () => {
-  const { db, zca, messages } = setup()
-  db.run(
-    `INSERT INTO e2ee_deciphered (accountId, key, content, ts) VALUES ('me', 'c41_u1_0', 'Xin chào bí mật', 1000)`
-  )
-  zca.emit('message', ME, new UserMessage(ME, { ...raw('41', 'u1', '0', 'AzMIlAMSIQUZJqd4T6O6Ehfg'), cmd: 551 } as TMessage))
+test('E2EE messages: a decrypted one is stored as its own type and searchable, a failed one stays chat.e2ee with its state', async () => {
+  const { zca, decrypted, messages } = setup()
+  decrypted.c41 = { status: 3000, content: 'Xin chào bí mật', quote: { ownerId: 'me', msg: 'gốc' } }
+  decrypted.c42 = { status: 3001 }
+  const e2eeMsg = (id: string) => new UserMessage(ME, { ...raw(id, 'u1', '0', 'AzMIlAMS'), cmd: 551 } as TMessage)
+  zca.emit('message', ME, e2eeMsg('41'))
+  zca.emit('message', ME, e2eeMsg('42'))
   await tick()
-  const [m] = (await messages.history(ME, 'u1', undefined, 50)).messages
-  expect(m).toMatchObject({ msgType: 'webchat', content: 'Xin chào bí mật', e2eeStatus: 1 })
-  expect(thread(messages, 'u1')).toMatchObject({ msgType: 'webchat', content: 'Xin chào bí mật', e2eeStatus: 1 })
+  const rows = (await messages.history(ME, 'u1', undefined, 50)).messages
+  expect(rows.map((m) => [m.msgId, m.msgType, m.content, m.e2eeStatus])).toEqual([
+    ['41', 'webchat', 'Xin chào bí mật', 3000],
+    ['42', 'chat.e2ee', 'AzMIlAMS', 3001],
+  ])
+  expect(rows[0].quote).toEqual({ ownerId: 'me', msg: 'gốc' })
+  expect(messages.search(ME, 'u1', { q: 'bí mật', limit: 20, offset: 0 } as never).map((m) => m.msgId)).toEqual(['41'])
 })
 
+test('text to an encrypted conversation goes out end-to-end encrypted, stored under the ids it was sent with; its echo is not stored again', async () => {
+  const { zca, api, e2ee, states, decrypted, messages } = setup()
+  states.u1 = 'on'
+  const req = SendMessageRequest.parse({ text: 'kín', styles: [{ start: 0, len: 3, st: 'b' }] })
+  expect(await messages.sendText(ME, 'u1', req)).toEqual({ msgId: '600' })
+  expect(e2ee.sendText).toHaveBeenCalledWith(ME, api, 'u1', 'kín', req.styles)
+  expect(api.sendMessage).not.toHaveBeenCalled()
+  decrypted.c600 = { status: 3006 }
+  zca.emit('message', ME, new UserMessage(ME, { ...raw('600', '0', 'u1', 'cipher'), cmd: 551 } as TMessage))
+  await tick()
+  const [row] = (await messages.history(ME, 'u1', undefined, 50)).messages
+  expect(row).toMatchObject({ msgId: '600', cliMsgId: 'c600', fromUid: ME, msgType: 'webchat', content: 'kín', e2eeStatus: 3000 })
+})
+
+test('nothing reaches an encrypted conversation as plaintext: replies and other types are refused, forwards fail, an unknown state waits', async () => {
+  const { zca, api, states, messages } = setup()
+  zca.emit('message', ME, dm('30'))
+  await tick()
+  states.u1 = 'on'
+  await expect(messages.sendText(ME, 'u1', SendMessageRequest.parse({ text: 'a', quoteMsgId: '30' }))).rejects.toThrow('mã hóa đầu cuối')
+  await expect(messages.sendSticker(ME, 'u1', { id: 1, cateId: 2, type: 7 })).rejects.toThrow('mã hóa đầu cuối')
+  const r = await messages.forward(ME, 'u1', '30', ['u1', 'u8'])
+  expect(r.fail).toEqual([expect.objectContaining({ threadId: 'u1' })])
+  expect(api.forwardMessage).toHaveBeenCalledWith(expect.anything(), ['u8'], ThreadType.User)
+  states.u9 = 'pending'
+  await expect(messages.sendText(ME, 'u9', SendMessageRequest.parse({ text: 'a' }))).rejects.toThrow('thử lại')
+  expect(api.sendMessage).not.toHaveBeenCalled()
+})
+
+test("E2EE messages from the offline queue and the preload are decrypted; the thread list shows which conversations are encrypted", async () => {
+  const { db, zca, api, e2ee, decrypted, messages } = setup()
+  decrypted.c70 = { status: 3000, content: 'lúc offline' }
+  decrypted.c71 = { status: 3000, content: 'preload' }
+  e2ee.emit('messages', ME, [{ ...raw('70', 'u5', '0', 'cipher'), cmd: 551 }])
+  api.getLastMessages.mockImplementationOnce(async () => ({ msgs: [{ ...raw('71', 'u6', '0', 'cipher'), cmd: 551 }], groupMsgs: [], clearUnreads: [] }) as never)
+  zca.emit('attached', ME, api as never)
+  db.run(`INSERT INTO e2ee_metadata (accountId, uid, status) VALUES ('me', 'u5', 1)`)
+  await tick()
+  expect([thread(messages, 'u5'), thread(messages, 'u6')].map((t) => [t?.content, t?.e2ee])).toEqual([
+    ['lúc offline', true],
+    ['preload', false],
+  ])
+})

@@ -31,13 +31,6 @@ export class ZcaService extends EventEmitter<ZcaEvents> {
         return this.sessions.has(accountId)
     }
 
-    getWs(accountId: string) {
-        const api = this.sessions.get(accountId)
-        if (!api) return undefined
-        const internals = api.listener as unknown as { ws?: unknown }
-        return internals.ws
-    }
-
     attach(accountId: string, api: API) {
         this.detach(accountId)
         this.sessions.set(accountId, api)

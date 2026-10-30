@@ -15,8 +15,10 @@ import {
   type SendDeliveredEventMessageParams,
   type Style,
   type TGroupEventBase,
+  type TMessage,
   type Typing,
   type Undo,
+  ZaloApiError,
 } from '@hwqnq/zca-js'
 import type { Database } from '../../../../dbs/sqlite'
 import { broadcast } from '../../../../core'
@@ -31,11 +33,8 @@ import { TOKENS } from '../../../../di/tokens'
 import type IMessageRepository from '../../repositories/interfaces/message-repository'
 import { E2EE, E2EE_CMDS, type Row, type Saved, type StoredMessage } from '../../repositories/interfaces/message-repository'
 import type IMessageService from '../interfaces/message-service'
-import { SignalSqliteStore } from '../../../../third-party/signal/signal-store'
-import { E2eeMessageReceiver } from '../../../../third-party/signal/e2ee-message-receiver'
-import { E2eeMessageSender } from '../../../../third-party/signal/e2ee-message-sender'
-import { E2eeSessionManager } from '../../../../third-party/signal/e2ee-session-manager'
-import { SignalServerManager } from '../../../../third-party/signal/signal-server-manager'
+import { E2eeService } from '../../../../third-party/signal/e2ee-service'
+import { E2EE_STATUS, type Decrypted, type E2eeMessage } from '../../../../third-party/signal/e2ee-message-receiver'
 
 // events that may take this account out of a group
 const OUT_EVENTS = new Set<GroupEventType>([GroupEventType.LEAVE, GroupEventType.REMOVE_MEMBER, GroupEventType.BLOCK_MEMBER])
@@ -65,19 +64,22 @@ const LINK_DESC = 200
 const GIF_FIRST_PAGE = 50
 const GIF_PAGE = 10
 const GIF_SRC_CHAT = 1
+// ponytail: only text is end-to-end encrypted so far; replies, media, stickers, links, cards, forwards are refused there
+const E2EE_UNSUPPORTED = 'Nexora chưa hỗ trợ gửi loại tin nhắn này trong trò chuyện mã hóa đầu cuối'
 // stored content of attachment messages (photo, file, link, card, sticker, ...); params is a JSON string
 type Attachment = { title?: string; description?: string; href?: string; thumb?: string; action?: string; params?: unknown; id?: number; catId?: number; type?: number }
 
 type ReactionMap = Record<string, { icons: Record<string, number>; lastId: string }>
 
-const toRow = (
-  accountId: string,
-  { data, threadId }: Message,
-  decryptedText?: string | null,
-  e2eeStatus?: number,
-): Row => {
-  const isE2eeCmd = E2EE_CMDS.includes(Number(data.cmd))
-  const isDecrypted = decryptedText !== undefined && e2eeStatus === 1
+// search text: a text body, a file name, a link title
+const textOf = (content: unknown) => (typeof content === 'string' ? content : ((content as { title?: string })?.title ?? null))
+
+// E2EE messages (cmd 551) are stored decrypted; one Nexora can't read stays chat.e2ee, out of search, with its
+// decryption state in e2eeStatus
+const toRow = (accountId: string, { data, threadId }: Message, dec?: Decrypted): Row => {
+  const e2ee = E2EE_CMDS.includes(Number(data.cmd))
+  const read = e2ee && dec?.status === E2EE_STATUS.OK
+  const content = read ? dec.content : data.content
   return {
     accountId,
     msgId: String(data.msgId),
@@ -85,19 +87,12 @@ const toRow = (
     toUid: threadId,
     fromUid: data.uidFrom,
     dName: data.dName,
-    msgType: isE2eeCmd ? (isDecrypted ? 'webchat' : E2EE) : data.msgType,
+    msgType: e2ee && !read ? E2EE : data.msgType,
     // a missing ts must not fail the NOT NULL column and drop the whole batch
     sendDttm: Number(data.ts) || Date.now(),
-    message: isDecrypted ? JSON.stringify(decryptedText) : JSON.stringify(data.content),
-    msgText:
-      isDecrypted
-        ? decryptedText
-        : isE2eeCmd
-          ? (decryptedText ?? null)
-          : typeof data.content === 'string'
-            ? data.content
-            : ((data.content as { title?: string })?.title ?? null),
-    quote: data.quote,
+    message: JSON.stringify(content),
+    msgText: e2ee && !read ? null : textOf(content),
+    quote: read && dec.quote ? dec.quote : data.quote,
     mentions: 'mentions' in data ? data.mentions : undefined,
     ttl: data.ttl,
     status: data.status,
@@ -110,7 +105,7 @@ const toRow = (
     topOut: data.topOut,
     topOutTimeOut: data.topOutTimeOut,
     topOutImprTimeOut: data.topOutImprTimeOut,
-    e2eeStatus: e2eeStatus ?? (isE2eeCmd ? 1 : 0),
+    ...(e2ee && { e2eeStatus: dec?.status ?? null }),
   }
 }
 
@@ -136,10 +131,6 @@ export default class MessageService implements IMessageService {
   private delivered = new Map<string, Message[]>()
   // "account:thread:anchor" -> when the group cloud was last asked
   private cloudCalls = new Map<string, number>()
-  private signalStores = new Map<string, SignalSqliteStore>()
-  private e2eeReceivers = new Map<string, E2eeMessageReceiver>()
-  private e2eeSessionManagers = new Map<string, E2eeSessionManager>()
-  private e2eeSenders = new Map<string, E2eeMessageSender>()
 
   constructor(
     @inject(TOKENS.Database) private db: Database,
@@ -147,6 +138,7 @@ export default class MessageService implements IMessageService {
     @inject(ZcaService) private zca: ZcaService,
     @inject(TOKENS.ContactService) private contacts: IContactService,
     @inject(TOKENS.ConversationService) private conversations: IConversationService,
+    @inject(E2eeService) private e2ee: E2eeService,
   ) {
     const guard =
       <A extends unknown[]>(name: string, fn: (...args: A) => unknown) =>
@@ -157,10 +149,6 @@ export default class MessageService implements IMessageService {
     messages.tagE2ee()
     zca.on('attached', guard('preload', (id: string) => this.preload(id)))
     zca.on('ready', guard('offline', (id: string) => this.requestOffline(id)))
-    zca.on('ready', guard('e2ee_init', (id: string) => {
-      const e2ee = this.getE2ee(id)
-      if (e2ee) void e2ee.sessionMgr.ensureRegistered().catch((e) => console.error(`[${id}] e2ee init error`, e))
-    }))
     zca.on('message', guard('message', (id: string, m: Message) => this.onLive(id, m)))
     zca.on('old_messages', guard('old_messages', (id: string, ms: Message[], type: ThreadType) => this.onOffline(id, ms, type)))
     zca.on('undo', guard('undo', (id: string, u: Undo) => this.onUndo(id, u)))
@@ -170,74 +158,8 @@ export default class MessageService implements IMessageService {
     zca.on('delivered_messages', guard('delivered', (id: string, d: DeliveredMessage[]) => this.onDelivered(id, d)))
     zca.on('typing', guard('typing', (id: string, t: Typing) => this.onTyping(id, t)))
     zca.on('group_event', guard('group_event', (id: string, e: GroupEvent) => this.onGroupEvent(id, e)))
-  }
-
-  private getReceiver(accountId: string): E2eeMessageReceiver {
-    let receiver = this.e2eeReceivers.get(accountId)
-    if (!receiver) {
-      let store = this.signalStores.get(accountId)
-      if (!store) {
-        store = new SignalSqliteStore(this.db, accountId)
-        this.signalStores.set(accountId, store)
-      }
-      receiver = new E2eeMessageReceiver(accountId, store)
-      this.e2eeReceivers.set(accountId, receiver)
-    }
-    return receiver
-  }
-
-  private getE2ee(accountId: string) {
-    let sessionMgr = this.e2eeSessionManagers.get(accountId)
-    if (!sessionMgr) {
-      const ws = this.zca.getWs(accountId)
-      if (!ws) return null
-      let store = this.signalStores.get(accountId)
-      if (!store) {
-        store = new SignalSqliteStore(this.db, accountId)
-        this.signalStores.set(accountId, store)
-      }
-      const rpc = new SignalServerManager(ws as any)
-      sessionMgr = new E2eeSessionManager(accountId, store, rpc)
-      const sender = new E2eeMessageSender(accountId, store, sessionMgr)
-      this.e2eeSessionManagers.set(accountId, sessionMgr)
-      this.e2eeSenders.set(accountId, sender)
-    }
-    return {
-      sessionMgr,
-      sender: this.e2eeSenders.get(accountId)!,
-      receiver: this.getReceiver(accountId),
-    }
-  }
-
-  private isE2eeThread(accountId: string, threadId: string): boolean {
-    const meta = this.db
-      .query<{ status: number }, [string, string]>(
-        `SELECT status FROM e2ee_metadata WHERE accountId = ? AND uid = ?`,
-      )
-      .get(accountId, threadId)
-    if (meta?.status === 1) return true
-
-    const lastE2eeMsg = this.db
-      .query<{ e2eeStatus: number }, [string, string]>(
-        `SELECT e2eeStatus FROM message WHERE accountId = ? AND toUid = ? AND (cmd IN (${E2EE_CMDS.join(',')}) OR e2eeStatus = 1) LIMIT 1`,
-      )
-      .get(accountId, threadId)
-    return !!lastE2eeMsg
-  }
-
-  private async decryptE2eeMessages(
-    accountId: string,
-    msgs: Message[],
-  ): Promise<Map<string, { plainText: string; e2eeStatus: number }>> {
-    const decs = new Map<string, { plainText: string; e2eeStatus: number }>()
-    const receiver = this.getReceiver(accountId)
-    for (const m of msgs) {
-      if (E2EE_CMDS.includes(Number(m.data.cmd))) {
-        const res = await receiver.decryptIncomingMessage(m.data)
-        decs.set(String(m.data.msgId), res)
-      }
-    }
-    return decs
+    e2ee.on('messages', guard('e2ee_offline', (id: string, ms: TMessage[]) => this.onE2eeOffline(id, ms)))
+    e2ee.on('changed', (id: string) => broadcast({ type: 'threads', accountId: id }))
   }
 
   // ===== Reads =====
@@ -246,12 +168,7 @@ export default class MessageService implements IMessageService {
     this.messages.purgeExpired(accountId)
     return this.messages
       .threads(accountId, limit)
-      .map(({ message, isGroup, e2eeStatus, ...t }) => ({
-        ...t,
-        isGroup: !!isGroup,
-        content: parse(message),
-        e2eeStatus: e2eeStatus ?? 0,
-      }))
+      .map(({ message, isGroup, e2ee, ...t }) => ({ ...t, isGroup: !!isGroup, e2ee: !!e2ee, content: parse(message) }))
   }
 
   // Local history first; groups fall back to Zalo's group cloud when local runs out (1-1 history beyond what
@@ -349,31 +266,28 @@ export default class MessageService implements IMessageService {
     if (quoted?.fromUid === null) throw new HTTPException(400, { message: 'Không trả lời được tin nhắn hệ thống' })
     const ttl = this.conversations.ttl(accountId, threadId)
 
-    if (!isGroup && this.isE2eeThread(accountId, threadId)) {
-      const e2ee = this.getE2ee(accountId)
-      if (e2ee) {
-        const res = await e2ee.sender.sendTextMessage(api, threadId, req.text, { quote: quoted })
-        const msgId = String(res?.data?.msgId ?? Date.now())
-        const row: Row = {
-          accountId,
-          msgId,
-          cliMsgId: nextClientId(),
-          toUid: threadId,
-          fromUid: accountId,
-          msgType: 'webchat',
-          sendDttm: Date.now(),
-          message: JSON.stringify(req.text),
-          msgText: req.text,
-          e2eeStatus: 1,
-          cmd: 551,
-          status: 1,
-          ttl,
-        }
-        this.messages.save(accountId, [{ row, isGroup: false, isSelf: true }])
-        broadcast({ type: 'messages', accountId, threadId, isGroup: false, msgIds: [msgId] })
-        broadcast({ type: 'threads', accountId })
-        return { msgId }
+    if (!isGroup && this.e2eeOn(accountId, threadId)) {
+      // ponytail: E2EE text and styles only; replies need PC's sendMsgQuote (7 encrypted fields + the owner's global id)
+      if (quoted) throw new HTTPException(400, { message: E2EE_UNSUPPORTED })
+      const sent = await this.e2ee.sendText(accountId, api, threadId, req.text, req.styles).catch((e) => {
+        throw e instanceof HTTPException || e instanceof ZaloApiError ? e : new HTTPException(502, { message: `Không gửi được tin nhắn mã hóa đầu cuối: ${e.message}` })
+      })
+      const row: Row = {
+        accountId,
+        msgId: sent.msgId,
+        cliMsgId: sent.cliMsgId,
+        toUid: threadId,
+        fromUid: accountId,
+        msgType: 'webchat',
+        sendDttm: Date.now(),
+        message: JSON.stringify(sent.content),
+        msgText: req.text,
+        cmd: E2EE_CMDS[0],
+        e2eeStatus: E2EE_STATUS.OK,
       }
+      this.messages.save(accountId, [{ row, isGroup: false, isSelf: true }])
+      this.announce(accountId, [sent.msgId])
+      return { msgId: sent.msgId }
     }
 
     const res = await api.sendMessage(
@@ -423,6 +337,7 @@ export default class MessageService implements IMessageService {
 
   // Attachment rows arrive through the listener echo.
   async sendAttachments(accountId: string, threadId: string, { files, text, dims }: SendAttachmentsRequest) {
+    this.requirePlain(accountId, threadId)
     const attachments = await Promise.all(
       files.map(async (f, i) => {
         if (!/\.[^.]+$/.test(f.name)) throw new HTTPException(400, { message: `Tên file cần có phần mở rộng: ${f.name}` })
@@ -434,6 +349,7 @@ export default class MessageService implements IMessageService {
   }
 
   async sendSticker(accountId: string, threadId: string, sticker: SendStickerRequest) {
+    this.requirePlain(accountId, threadId)
     const res = await this.zca.get(accountId).sendSticker(sticker, threadId, this.type(accountId, threadId))
     return { msgId: String(res.msgId) }
   }
@@ -441,6 +357,7 @@ export default class MessageService implements IMessageService {
   // Zalo PC "Gửi danh thiếp": one card per friend through /forward (msgType 6), QR codes best-effort (PC sends the
   // card without one when mget-qr fails), phone only when "Gửi kèm số điện thoại" is ticked. Rows arrive by the echo.
   async sendCards(accountId: string, threadId: string, { userIds, withPhone }: SendCardsRequest) {
+    this.requirePlain(accountId, threadId)
     if (userIds.length > MAX_CARDS) throw new HTTPException(400, { message: `Bạn chỉ có thể chia sẻ ${MAX_CARDS} danh thiếp` })
     const api = this.zca.get(accountId)
     const qr = await api.getQR(userIds).catch(() => ({}) as Record<string, string>)
@@ -465,6 +382,7 @@ export default class MessageService implements IMessageService {
   // Zalo PC sends a text whose preview is ready as one link message carrying the whole text (zca's sendLink parses
   // again and rewrites the text, so the request is built here as PC's sendLinkMessage)
   async sendLink(accountId: string, threadId: string, { text, preview, mentions }: SendLinkRequest) {
+    this.requirePlain(accountId, threadId)
     const api = this.zca.get(accountId)
     const isGroup = this.messages.isGroup(accountId, threadId)
     const { imei, language } = api.getContext()
@@ -496,6 +414,7 @@ export default class MessageService implements IMessageService {
 
   // Zalo PC's sendGif: a Giphy GIF by URL, params on the query string; zca can only upload a .gif file
   async sendGif(accountId: string, threadId: string, gif: Gif) {
+    this.requirePlain(accountId, threadId)
     const api = this.zca.get(accountId)
     const type = this.type(accountId, threadId)
     await zaloPost(
@@ -602,20 +521,27 @@ export default class MessageService implements IMessageService {
     if (source.msgType !== 'webchat' && !this.forwardable(source.msgType, c)) throw new HTTPException(400, { message: 'Không chia sẻ được loại tin nhắn này' })
     const api = this.zca.get(accountId)
     const ttl = (id: string) => this.conversations.ttl(accountId, id)
+    // forwarding goes out as plaintext: never into an encrypted conversation
+    const encrypted = to.filter((id) => !this.messages.isGroup(accountId, id) && this.e2ee.state(accountId, id) !== 'off')
+    const blocked = encrypted.map((threadId) => ({ clientId: '', threadId, error_code: E2EE_UNSUPPORTED }))
+    to = to.filter((id) => !encrypted.includes(id))
     if (source.msgType === 'webchat') {
       const batches = Map.groupBy(to, (id) => `${this.type(accountId, id)}:${ttl(id)}`)
       const results = await Promise.all(
         [...batches.values()].map((ids) => api.forwardMessage({ message: typeof content === 'string' ? content : String(c.title ?? ''), ttl: ttl(ids[0]) }, ids, this.type(accountId, ids[0]))),
       )
-      return { success: results.flatMap((r) => r.success), fail: results.flatMap((r) => r.fail) }
+      return { success: results.flatMap((r) => r.success), fail: [...results.flatMap((r) => r.fail), ...blocked] }
     }
     const settled = await Promise.allSettled(to.map((id) => this.forwardOne(api, source.msgType, c, id, this.type(accountId, id), ttl(id))))
     return {
       success: to.filter((_, i) => settled[i].status === 'fulfilled').map((id) => ({ clientId: '', msgId: '', threadId: id })),
-      fail: to.flatMap((id, i) => {
-        const r = settled[i]
-        return r.status === 'rejected' ? [{ threadId: id, error_code: String((r.reason as Error)?.message ?? r.reason) }] : []
-      }),
+      fail: [
+        ...to.flatMap((id, i) => {
+          const r = settled[i]
+          return r.status === 'rejected' ? [{ threadId: id, error_code: String((r.reason as Error)?.message ?? r.reason) }] : []
+        }),
+        ...blocked,
+      ],
     }
   }
 
@@ -713,10 +639,8 @@ export default class MessageService implements IMessageService {
   private async preload(accountId: string) {
     const local = this.messages.previews(accountId)
     const res = await this.zca.get(accountId).getLastMessages(local.map((p) => ({ threadId: p.threadId, type: p.isGroup ? ThreadType.Group : ThreadType.User, msgId: p.msgId })))
-    const { saved } = this.store(accountId, [
-      ...(res.msgs ?? []).map((m) => new UserMessage(accountId, m)),
-      ...(res.groupMsgs ?? []).map((m) => new GroupMessage(accountId, m)),
-    ])
+    const msgs = [...(res.msgs ?? []).map((m) => new UserMessage(accountId, m)), ...(res.groupMsgs ?? []).map((m) => new GroupMessage(accountId, m))]
+    const { saved } = this.store(accountId, msgs, await this.decryptAll(accountId, msgs))
     // read on another device
     for (const c of res.clearUnreads ?? []) this.messages.markRead(accountId, c.idTo, String(c.lastMsgId))
     broadcast({ type: 'threads', accountId })
@@ -733,8 +657,7 @@ export default class MessageService implements IMessageService {
   }
 
   private async onOffline(accountId: string, msgs: Message[], type: ThreadType) {
-    const decs = await this.decryptE2eeMessages(accountId, msgs)
-    const { saved } = this.store(accountId, msgs, decs)
+    const { saved } = this.store(accountId, msgs, await this.decryptAll(accountId, msgs))
     if (saved.length) broadcast({ type: 'threads', accountId })
     this.learn(accountId, saved)
     // zca doesn't expose the queue's `more` flag: keep paging from the newest actionId until a batch adds nothing
@@ -751,8 +674,7 @@ export default class MessageService implements IMessageService {
   }
 
   private async onLive(accountId: string, msg: Message) {
-    const decs = await this.decryptE2eeMessages(accountId, [msg])
-    const { saved, undone } = this.store(accountId, [msg], decs)
+    const { saved, undone } = this.store(accountId, [msg], await this.decryptAll(accountId, [msg]))
     this.announce(accountId, saved.map((s) => s.row.msgId))
     for (const msgId of undone) broadcast({ type: 'undo', accountId, msgId })
     this.learn(accountId, saved)
@@ -881,20 +803,19 @@ export default class MessageService implements IMessageService {
 
   // ===== Storage =====
 
-  private store(
-    accountId: string,
-    msgs: Message[],
-    decs?: Map<string, { plainText: string; e2eeStatus: number }>,
-  ) {
+  // decs: decrypted E2EE messages by msgId
+  private store(accountId: string, msgs: Message[], decs?: Map<string, Decrypted>) {
     const saved: Saved[] = []
     const undone: string[] = []
     this.db.transaction(() => {
       for (const m of msgs) {
         const dec = decs?.get(String(m.data.msgId))
+        // the server's copy of an E2EE message this device sent: already stored decrypted
+        if (dec?.status === E2EE_STATUS.DUPLICATED) continue
         const content = m.data.content as { deleteMsg?: number; globalMsgId?: number } | string
         // offline batches carry recalls as messages
         if (typeof content === 'object' && content && 'deleteMsg' in content) undone.push(String(content.globalMsgId))
-        else saved.push({ row: toRow(accountId, m, dec?.plainText, dec?.e2eeStatus), isGroup: m.type === ThreadType.Group, isSelf: m.isSelf })
+        else saved.push({ row: toRow(accountId, m, dec), isGroup: m.type === ThreadType.Group, isSelf: m.isSelf })
       }
       // recalls after saving: the recalled message may be in this same batch
       this.messages.save(accountId, saved)
@@ -936,6 +857,34 @@ export default class MessageService implements IMessageService {
   }
 
   // ===== Helpers =====
+
+  // E2EE messages decrypted in arrival order: each is a step of its sender's Signal chain
+  private async decryptAll(accountId: string, msgs: Message[]) {
+    const decs = new Map<string, Decrypted>()
+    for (const m of msgs)
+      if (m.type === ThreadType.User && E2EE_CMDS.includes(Number(m.data.cmd))) decs.set(String(m.data.msgId), await this.e2ee.decrypt(accountId, m.data as unknown as E2eeMessage, m.isSelf))
+    return decs
+  }
+
+  // 1-1 E2EE messages from the offline queue
+  private async onE2eeOffline(accountId: string, raws: TMessage[]) {
+    const msgs = raws.map((m) => new UserMessage(accountId, m))
+    const { saved } = this.store(accountId, msgs, await this.decryptAll(accountId, msgs))
+    if (saved.length) broadcast({ type: 'threads', accountId })
+    this.learn(accountId, saved)
+  }
+
+  // Whether a 1-1 message goes out end-to-end encrypted; while that's unknown it can't go out at all
+  private e2eeOn(accountId: string, threadId: string) {
+    const state = this.e2ee.state(accountId, threadId)
+    if (state === 'pending') throw new HTTPException(409, { message: 'Đang thiết lập mã hóa đầu cuối, vui lòng thử lại sau giây lát' })
+    return state === 'on'
+  }
+
+  // message types Nexora can't encrypt yet must not reach an encrypted conversation as plaintext
+  private requirePlain(accountId: string, threadId: string) {
+    if (!this.messages.isGroup(accountId, threadId) && this.e2eeOn(accountId, threadId)) throw new HTTPException(400, { message: E2EE_UNSUPPORTED })
+  }
 
   private get(accountId: string, msgId: string) {
     const row = this.messages.find(accountId, msgId)
@@ -982,7 +931,7 @@ export default class MessageService implements IMessageService {
       reactions: this.counts(accountId, parse(r.reactions ?? null)),
       seenUids: parse(r.seenUids ?? null) ?? [],
       deliveredUids: parse(r.deliveredUids ?? null) ?? [],
-      e2eeStatus: (r as any).e2eeStatus ?? 0,
+      e2eeStatus: r.e2eeStatus ?? null,
     }
   }
 }

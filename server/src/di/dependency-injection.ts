@@ -48,12 +48,14 @@ import type ITodoRepository from '../modules/todos/repositories/interfaces/todo-
 import TodoService from '../modules/todos/services/implements/todo-service'
 import type ITodoService from '../modules/todos/services/interfaces/todo-service'
 import { ZcaService } from '../third-party/zalo/zalo-client'
+import { E2eeService } from '../third-party/signal/e2ee-service'
 import { TOKENS } from './tokens'
 
 export function createContainer(database: Database = openDatabase(config.dbPath)) {
   const container = new Container({ defaultScope: 'Singleton' })
   container.bind<Database>(TOKENS.Database).toConstantValue(database)
   container.bind(ZcaService).toSelf()
+  container.bind(E2eeService).toSelf()
   container.bind<IAccountRepository>(TOKENS.AccountRepository).to(AccountRepository)
   container.bind<IBoardRepository>(TOKENS.BoardRepository).to(BoardRepository)
   container.bind<IContactRepository>(TOKENS.ContactRepository).to(ContactRepository)

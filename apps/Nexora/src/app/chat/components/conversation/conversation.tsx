@@ -429,8 +429,8 @@ export function Conversation({
             <div className="min-w-0 flex-1">
               <div className="truncate text-base font-semibold flex items-center gap-1.5">
                 <span>{name}</span>
-                {live?.e2eeStatus === 1 && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-normal text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5" title="Cuộc trò chuyện này được mã hóa đầu cuối">
+                {live?.e2ee && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-normal text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5" title="Đã mã hóa đầu cuối">
                     <LockIcon className="size-3" /> Mã hóa đầu cuối
                   </span>
                 )}

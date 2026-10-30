@@ -3,7 +3,7 @@ import { Database, upsert } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type { MediaKind } from '../../dtos/responses/message.response'
 import type IMessageRepository from '../interfaces/message-repository'
-import { E2EE, E2EE_CMDS, type Row, type Saved, type StoredMessage, type ThreadRow } from '../interfaces/message-repository'
+import { E2EE, E2EE_CMDS, E2EE_READ, type Row, type Saved, type StoredMessage, type ThreadRow } from '../interfaces/message-repository'
 
 // Zalo PC turns a recalled message into this type
 const UNDONE = 'chat.undo'
@@ -24,10 +24,10 @@ export default class MessageRepository implements IMessageRepository {
 
   // encrypted messages stored before they were told apart
   tagE2ee() {
-    this.db.run(`UPDATE message SET msgType = '${E2EE}', msgText = NULL WHERE cmd IN (${E2EE_CMDS}) AND msgType != '${E2EE}' AND (e2eeStatus IS NULL OR e2eeStatus != 1)`)
+    this.db.run(`UPDATE message SET msgType = '${E2EE}', msgText = NULL WHERE cmd IN (${E2EE_CMDS}) AND msgType != '${E2EE}' AND e2eeStatus IS NOT ${E2EE_READ}`)
     this.db.run(
       `UPDATE preview_message SET messageType = '${E2EE}' WHERE messageType != '${E2EE}'
-         AND EXISTS (SELECT 1 FROM message m WHERE m.accountId = preview_message.accountId AND m.msgId = preview_message.msgId AND m.msgType = '${E2EE}' AND (m.e2eeStatus IS NULL OR m.e2eeStatus != 1))`,
+         AND EXISTS (SELECT 1 FROM message m WHERE m.accountId = preview_message.accountId AND m.msgId = preview_message.msgId AND m.msgType = '${E2EE}')`,
     )
   }
 
@@ -39,7 +39,7 @@ export default class MessageRepository implements IMessageRepository {
       .query<ThreadRow, [string, number]>(
         `SELECT p.convId AS threadId, p.isGroup, p.msgId, p.messageType AS msgType, p.message, p.fromUid, p.dName, p.messageTime,
            COALESCE(us.alias, us.displayName, g.displayName) AS name, COALESCE(us.avatar, g.avatar) AS avatar,
-           COALESCE((SELECT m.e2eeStatus FROM message m WHERE m.accountId = p.accountId AND m.msgId = p.msgId), 0) AS e2eeStatus,
+           EXISTS (SELECT 1 FROM e2ee_metadata e WHERE e.accountId = p.accountId AND e.uid = p.convId AND e.status = 1) AS e2ee,
            (SELECT count(*) FROM message m WHERE m.accountId = p.accountId AND m.toUid = p.convId AND m.fromUid != p.accountId
               AND m.msgType != '${UNDONE}' AND (u.lastProcessMsgId IS NULL OR CAST(m.msgId AS INTEGER) > CAST(u.lastProcessMsgId AS INTEGER))) AS unread
          FROM preview_message p

@@ -8,7 +8,9 @@ const json = JSONBig({ storeAsString: true })
 
 // a websocket control (cmd 601): conversation settings changed by this account elsewhere or by the other side
 export type Control = { act_type?: string; act?: string; data?: unknown; [key: string]: unknown }
-type Frame = { data?: unknown; encrypt?: unknown }
+// a socket frame body: { error_code, data, encrypt }, or { key, ... } for the auth frame
+export type Frame = { error_code?: number; data?: unknown; encrypt?: unknown; key?: string }
+type Internals = { ws: WebSocket | null; cipherKey?: string }
 
 // zca's decodeEventData, which zca doesn't export: encrypt 0 = JSON, 1 = base64, 2/3 = AES-GCM (iv 16, aad 16,
 // then ciphertext + tag) of URI-encoded base64; gzip or zlib compressed (pako autodetects, so does unzip) except type 3
@@ -28,23 +30,49 @@ export async function decodeFrame(frame: Frame, cipherKey?: string) {
   return text ? json.parse(text) : undefined
 }
 
-// zca's listener only passes on file_done, group, voip, sync and fr controls; the rest (conv_settings, pin and mute
-// changes, ...) are read here from the same socket frames. The socket is replaced on every reconnect.
-export function tapControls(listener: API['listener'], onControl: (c: Control) => void) {
-  const internals = listener as unknown as { ws: WebSocket | null; cipherKey?: string }
+// Every frame of the chat socket, as zca's listener reads it. The socket is replaced on every reconnect, so the tap
+// follows each new one.
+export function tapFrames(listener: API['listener'], onFrame: (cmd: number, subCmd: number, frame: Frame, cipherKey?: string) => void) {
+  const internals = listener as unknown as Internals
   listener.on('connected', () =>
     internals.ws?.on('message', (raw) => {
       const buf = Buffer.isBuffer(raw) ? raw : null
       // header: version, cmd (uint16 LE), subCmd
-      if (!buf || buf.length < 4 || buf[0] !== 1 || buf.readUInt16LE(1) !== 601 || buf[3] !== 0) return
-      void Promise.resolve()
-        .then(() => decodeFrame(JSON.parse(buf.subarray(4).toString('utf8')), internals.cipherKey))
-        .then((d: { data?: { controls?: { content?: Control }[] } } | undefined) => {
-          for (const c of d?.data?.controls ?? []) if (c.content) onControl(c.content)
-        })
-        .catch((e) => console.error('[zca] control frame', e))
+      if (!buf || buf.length < 4 || buf[0] !== 1) return
+      let frame: Frame
+      try {
+        frame = JSON.parse(buf.subarray(4).toString('utf8'))
+      } catch {
+        return
+      }
+      onFrame(buf.readUInt16LE(1), buf[3], frame, internals.cipherKey)
     }),
   )
+}
+
+// Zalo PC's socket _send: header, then only the JSON of data
+export function sendFrame(listener: API['listener'], cmd: number, subCmd: number, data: unknown) {
+  const ws = (listener as unknown as Internals).ws
+  if (!ws || ws.readyState !== ws.OPEN) throw new Error('Mất kết nối tới máy chủ')
+  const head = Buffer.alloc(4)
+  head[0] = 1
+  head.writeUInt16LE(cmd, 1)
+  head[3] = subCmd
+  ws.send(Buffer.concat([head, Buffer.from(JSON.stringify(data), 'utf8')]))
+}
+
+// zca's listener only passes on file_done, group, voip, sync and fr controls; the rest (conv_settings, pin and mute
+// changes, ...) are read here from the same socket frames.
+export function tapControls(listener: API['listener'], onControl: (c: Control) => void) {
+  tapFrames(listener, (cmd, subCmd, frame, cipherKey) => {
+    if (cmd !== 601 || subCmd !== 0) return
+    void Promise.resolve()
+      .then(() => decodeFrame(frame, cipherKey))
+      .then((d: { data?: { controls?: { content?: Control }[] } } | undefined) => {
+        for (const c of d?.data?.controls ?? []) if (c.content) onControl(c.content)
+      })
+      .catch((e) => console.error('[zca] control frame', e))
+  })
 }
 
 // control data comes as an object or a JSON string

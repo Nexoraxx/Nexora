@@ -18,7 +18,8 @@ export type MessageRow = {
   reactions: ReactionCount[]
   seenUids: string[]
   deliveredUids: string[]
-  e2eeStatus?: number
+  // end-to-end encrypted message: Zalo PC's state (3000 decrypted, 3001 failed, 3003 sent to an older key)
+  e2eeStatus: number | null
 }
 
 export type Thread = {
@@ -33,7 +34,8 @@ export type Thread = {
   dName: string | null
   messageTime: number
   unread: number
-  e2eeStatus?: number
+  // end-to-end encrypted conversation
+  e2ee: boolean
 }
 
 export type MessagePerson = { userId: string; name: string; avatar: string }

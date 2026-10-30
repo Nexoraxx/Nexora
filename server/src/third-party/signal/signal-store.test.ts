@@ -36,7 +36,7 @@ describe('SignalSqliteStore', () => {
     expect(await store.loadSession('peer_1.2')).toBe('session_data_json')
 
     // isTrustedIdentity should always return true for Zalo compatibility
-    expect(await store.isTrustedIdentity('peer_1.2', identity.pubKey)).toBe(true)
+    expect(await store.isTrustedIdentity()).toBe(true)
 
     // deciphered cache
     await store.saveDeciphered('msg_123', 'Decrypted text content')
