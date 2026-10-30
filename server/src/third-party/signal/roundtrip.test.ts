@@ -18,6 +18,8 @@ class FakeZalo {
   bundles = new Map<string, Map<number, DeviceBundle & { opKeys: BundleKey[] }>>()
   calls: Call[] = []
   list: E2eeList = {}
+  // as the live server answered this client: 112 for any GET_BUNDLE of your own devices
+  refuseOwn = false
 
   connect(uid: string, deviceId: number) {
     const rpc = new SignalServerManager((cmd, subCmd, body) => {
@@ -45,7 +47,7 @@ class FakeZalo {
       case 541: {
         const of = String(d.uids[0].uid)
         const wanted: number = d.uids[0].deviceId
-        if (of === uid && wanted === -1) return UNKNOWN_EXCEPTION
+        if (of === uid && (wanted === -1 || this.refuseOwn)) return UNKNOWN_EXCEPTION
         const devices = [...(this.bundles.get(of)?.values() ?? [])].filter((b) => wanted === -1 || b.deviceId === wanted)
         if (wanted !== -1 && !devices.some((b) => b.preKey)) return { err: -2 }
         return { keys: [{ uid: of, keys: devices.map((b) => ({ ...b, opKeys: b.opKeys.splice(0, 1) })) }] }
@@ -282,4 +284,19 @@ test('turning E2EE on fails for a peer with no E2EE device', async () => {
   const { alice } = await setup()
   await expect(alice.sessions.enable('nobody', 50)).rejects.toMatchObject({ code: 'NO_DEVICE' })
   expect(alice.store.meta('nobody').status).toBe(0)
+})
+
+test("when Zalo refuses our own devices' bundles, turning E2EE on and sending still work, as PC, and ours are asked again later", async () => {
+  const { zalo, alice, bob } = await setup()
+  zalo.refuseOwn = true
+  expect(await alice.sessions.enable('bob', 50)).toBe('pending')
+  expect(zalo.sent(543).find((c) => c.data.uidTo === 'bob')).toBeDefined()
+  const { api, posted } = fakeApi()
+  await alice.sender.sendText(api, 'bob', 'vẫn gửi được')
+  expect(JSON.parse(posted[0].listParams).map((p: { toId: string }) => p.toId)).toEqual(['bob'])
+  expect(alice.store.meta('alice').devices).toBeNull()
+  zalo.refuseOwn = false
+  await alice.sender.sendText(api, 'bob', 'lần sau')
+  expect(alice.store.meta('alice').devices).toEqual([])
+  expect(bob.store.registrationId()).toBeTruthy()
 })

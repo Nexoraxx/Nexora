@@ -142,15 +142,20 @@ export class E2eeSessionManager extends EventEmitter {
 
   private async build(uid: string, { rebuild = false, isReInit = false, msgInfoNoti = false, forwardSubdevice = false }: BuildOptions) {
     const lib = getLibSignal()
-    // ours: one device at a time as PC's _initSessionSubDevices, skipping slots without keys
+    // ours: one device at a time as PC's _initSessionSubDevices, skipping slots without keys. Zalo may refuse them
+    // outright (112 to this client); PC carries on without its other devices then, and so does this, asking again later
+    let ownUnknown = false
     const bundles: DeviceBundle[] =
       uid === this.accountId
         ? (
             await Promise.all(
               MY_SUBDEVICES.map((deviceId) =>
                 this.rpc.getBundle(uid, { deviceId, isReInit: true }).catch((e) => {
-                  if (NO_BUNDLE.has((e as { code?: number }).code!)) return []
-                  throw e
+                  if (!NO_BUNDLE.has((e as { code?: number }).code!)) {
+                    console.error(`[e2ee] own device ${deviceId} bundle`, e)
+                    ownUnknown = true
+                  }
+                  return []
                 }),
               ),
             )
@@ -175,9 +180,9 @@ export class E2eeSessionManager extends EventEmitter {
       }
       devices.push({ deviceId, regId })
     }
-    this.store.setMeta(uid, { devices })
+    if (!ownUnknown) this.store.setMeta(uid, { devices })
     if (inits.length) await this.rpc.initSession(uid, inits)
-    return this.store.meta(uid)
+    return ownUnknown ? { ...this.store.meta(uid), devices } : this.store.meta(uid)
   }
 
   // ===== Server session events (online pushes and the offline session queue) =====
