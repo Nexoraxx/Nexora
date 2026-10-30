@@ -127,7 +127,8 @@ export class E2eeSessionManager extends EventEmitter {
       const regId = await this.sessionRegId(uid, d.deviceId)
       return regId === undefined || (!!d.regId && regId !== d.regId)
     }
-    if (!devices || (await Promise.all(devices.map(stale))).includes(true)) devices = (await this.buildSessions(uid)).devices ?? []
+    // a peer with no known device is asked again: an empty list is never a reason to give up on an E2EE chat
+    if (!devices || (!devices.length && uid !== this.accountId) || (await Promise.all(devices.map(stale))).includes(true)) devices = (await this.buildSessions(uid)).devices ?? []
     return devices.map((d) => d.deviceId)
   }
 
@@ -270,9 +271,11 @@ export class E2eeSessionManager extends EventEmitter {
     }
   }
 
+  // the devices left; none left (or none known) is "unknown", fetched again on the next send
   private dropDevice(uid: string, deviceId: number) {
     this.store.removeSession(this.address(uid, deviceId).toString())
-    this.store.setMeta(uid, { devices: (this.store.meta(uid).devices ?? []).filter((d) => d.deviceId !== deviceId) })
+    const left = (this.store.meta(uid).devices ?? []).filter((d) => d.deviceId !== deviceId)
+    this.store.setMeta(uid, { devices: left.length ? left : null })
   }
 
   private setStatus(uid: string, on: boolean) {

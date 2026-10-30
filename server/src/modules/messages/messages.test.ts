@@ -461,3 +461,14 @@ test("Zalo's GET_BUNDLE refusals when turning E2EE on read as PC's: which side h
   refuse({ code: -9, errData: [{ uid: 'f1', deviceId: 1 }, { uid: ME, deviceId: 2 }, { uid: ME, deviceId: 0 }] })
   await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Hãy đăng nhập lại Zalo trên điện thoại, Zalo PC và thử nâng cấp lại')
 })
+
+test("Zalo's E2EE blacklist (-10, -11) reads as PC's \"not available with this user\"", async () => {
+  const { db, e2ee, messages } = setup()
+  db.run(`INSERT INTO user (accountId, userId, displayName, isFr, isBlocked) VALUES ('me', 'f1', 'Bạn A', 1, 0)`)
+  for (const code of [-10, -11]) {
+    e2ee.enable.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('x'), { code, errData: [] })
+    })
+    await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Tính năng hiện không khả dụng với người dùng này')
+  }
+})

@@ -300,3 +300,11 @@ test("when Zalo refuses our own devices' bundles, turning E2EE on and sending st
   expect(alice.store.meta('alice').devices).toEqual([])
   expect(bob.store.registrationId()).toBeTruthy()
 })
+
+test("a delete-key push for a device we never knew doesn't leave the peer with \"no devices\": the next send asks Zalo again", async () => {
+  const { alice, bob } = await setup()
+  alice.store.setMeta('bob', { status: 1 })
+  await alice.sessions.onSessionEvents(548, [{ msgId: '1', sessionData: { uidFrom: 'bob', deviceId: 0, deleteType: 0 } }])
+  expect(await alice.sessions.devices('bob')).toEqual([2])
+  expect(bob.store.registrationId()).toBeTruthy()
+})

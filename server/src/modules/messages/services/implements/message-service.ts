@@ -775,26 +775,25 @@ export default class MessageService implements IMessageService {
     try {
       return { status: await this.e2ee.enable(accountId, threadId) }
     } catch (e) {
-      const { code, errData } = e as { code?: unknown; errData?: { uid: string; deviceId: number }[] }
-      if (code === 'not_ready') throw new HTTPException(409, { message: 'Đang thiết lập cấu hình mã hóa đầu cuối, vui lòng thử lại sau' })
-      const name = this.messages.displayName(accountId, threadId) ?? threadId
-      // PC's BUNDLE_KEY_ERROR texts
-      const mine = new Set((errData ?? []).filter((d) => String(d.uid) === accountId).map((d) => Number(d.deviceId)))
-      const message =
-        code === 'NO_DEVICE' || code === -2
-          ? `${name} không nằm trong danh sách thử nghiệm tính năng Mã hóa đầu cuối. Hãy thử nâng cấp với trò chuyện khác.`
-          : code === -3
-            ? `${name} cần cập nhật phiên bản Zalo mới`
-            : code === -5
-              ? 'Bạn cần cập nhật Zalo bản mới trên điện thoại và máy tính để nâng cấp mã hóa đầu cuối.'
-              : code === -9 && mine.size
-                ? `Hãy đăng nhập lại ${MY_DEVICE_NAMES.filter(([d]) => mine.has(d)).map(([, n]) => n).join(', ')} và thử nâng cấp lại`
-                : code === 'timeout' || code === 'offline'
-                  ? 'Hãy kiểm tra lại kết nối mạng và thử lại'
-                  : 'Vui lòng thử lại'
+      if ((e as { code?: unknown }).code === 'not_ready') throw new HTTPException(409, { message: 'Đang thiết lập cấu hình mã hóa đầu cuối, vui lòng thử lại sau' })
+      const message = this.upgradeError(accountId, threadId, e as { code?: unknown; errData?: { uid: string; deviceId: number }[] })
       console.error(`[${accountId}] e2ee upgrade ${threadId}`, e)
       throw new HTTPException(502, { message })
     }
+  }
+
+  // PC's texts for a refused upgrade: GET_BUNDLE's BUNDLE_KEY_ERROR, Zalo's E2EE blacklist, the network
+  private upgradeError(accountId: string, threadId: string, { code, errData }: { code?: unknown; errData?: { uid: string; deviceId: number }[] }) {
+    const name = this.messages.displayName(accountId, threadId) ?? threadId
+    if (code === 'NO_DEVICE' || code === -2) return `${name} không nằm trong danh sách thử nghiệm tính năng Mã hóa đầu cuối. Hãy thử nâng cấp với trò chuyện khác.`
+    if (code === -3) return `${name} cần cập nhật phiên bản Zalo mới`
+    if (code === -5) return 'Bạn cần cập nhật Zalo bản mới trên điện thoại và máy tính để nâng cấp mã hóa đầu cuối.'
+    if (code === -10 || code === -11) return 'Tính năng hiện không khả dụng với người dùng này'
+    // -9: these devices of ours have no keys
+    const mine = new Set((errData ?? []).filter((d) => String(d.uid) === accountId).map((d) => Number(d.deviceId)))
+    if (code === -9 && mine.size) return `Hãy đăng nhập lại ${MY_DEVICE_NAMES.filter(([d]) => mine.has(d)).map(([, n]) => n).join(', ')} và thử nâng cấp lại`
+    if (code === 'timeout' || code === 'offline') return 'Hãy kiểm tra lại kết nối mạng và thử lại'
+    return 'Vui lòng thử lại'
   }
 
   // left or dispersed: the group and its conversation go (PC's storage.deleteGroup)
