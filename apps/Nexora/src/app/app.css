@@ -1,0 +1,62 @@
+/* something colorful under the glass bars of the chat */
+.conversation {
+  background:
+    radial-gradient(circle at 12% 18%, #bcd4ff 0, transparent 38%),
+    radial-gradient(circle at 88% 26%, #ffd3e6 0, transparent 34%),
+    radial-gradient(circle at 70% 88%, #c8f1de 0, transparent 40%),
+    radial-gradient(circle at 20% 80%, #ffe7c2 0, transparent 30%),
+    #eef1f6;
+}
+
+/* the library sets filter inline on .glass__warp (see Glass.tsx) */
+.no-refraction .glass__warp {
+  filter: none !important;
+}
+
+/* liquid-glass-react animates its layers' size and position inline (0.2s); a bar that grows would have its rim
+   slide after the content, so GlassBar resizes them all at once instead */
+.glass-dock > *,
+.glass-dock .glass {
+  transition: none !important;
+}
+
+/* One cell of Zalo's emoji sprite (51 columns; positions are percentages). The character stays inside,
+   transparent, so copy/paste keeps the text. */
+.emoji {
+  display: inline-block;
+  width: 1.3em;
+  height: 1.3em;
+  vertical-align: -0.3em;
+  background-size: 5100%;
+  background-repeat: no-repeat;
+  color: transparent;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sticker-cell {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  background: var(--thumb) center / contain no-repeat;
+  cursor: pointer;
+}
+.sticker-cell:hover {
+  background-color: var(--color-muted);
+}
+.sticker-cell.animated:hover {
+  background-image: var(--anim);
+}
+/* Zalo PC sprite: a horizontal strip of square frames, shown one frame at a time */
+.sticker-cell.strip:hover {
+  background-image: var(--anim);
+  background-size: calc(64px * var(--frames)) 64px;
+  background-position: 0 0;
+  animation: sticker-strip var(--duration) steps(var(--frames)) infinite;
+}
+@keyframes sticker-strip {
+  to {
+    background-position: calc(-64px * var(--frames)) 0;
+  }
+}
