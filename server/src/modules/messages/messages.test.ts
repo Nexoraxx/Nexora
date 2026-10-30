@@ -446,3 +446,18 @@ test("turning E2EE on, as PC: only for a friend's 1-1 chat that isn't blocked; Z
   })
   await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Hãy kiểm tra lại kết nối mạng và thử lại')
 })
+
+test("Zalo's GET_BUNDLE refusals when turning E2EE on read as PC's: which side has to update or sign in again", async () => {
+  const { db, e2ee, messages } = setup()
+  db.run(`INSERT INTO user (accountId, userId, displayName, isFr, isBlocked) VALUES ('me', 'f1', 'Bạn A', 1, 0)`)
+  const refuse = (error: object) =>
+    e2ee.enable.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('x'), error)
+    })
+  refuse({ code: -2 })
+  await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Bạn A không nằm trong danh sách thử nghiệm')
+  refuse({ code: -3 })
+  await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Bạn A cần cập nhật phiên bản Zalo mới')
+  refuse({ code: -9, errData: [{ uid: 'f1', deviceId: 1 }, { uid: ME, deviceId: 2 }, { uid: ME, deviceId: 0 }] })
+  await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Hãy đăng nhập lại Zalo trên điện thoại, Zalo PC và thử nâng cấp lại')
+})

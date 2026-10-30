@@ -82,3 +82,10 @@ test("the E2EE list is read page by page as PC's default, all pages merged", asy
   await reply(1, { threads: [{ uid: 'b' }], waitUids: ['c'], hasMore: 0 })
   expect(await list).toEqual({ threads: [{ uid: 'a' }, { uid: 'b' }], waitUids: ['c'] })
 })
+
+test("an error reply that doesn't name its request fails that command's pending request at once, not after 10 s", async () => {
+  const { rpc } = manager()
+  const bundle = rpc.getBundle('me')
+  await rpc.onFrame(541, 0, { error_code: 112, encrypt: 0, data: JSON.stringify({ error_code: 112, error_message: 'Lỗi không xác định' }) })
+  await expect(bundle).rejects.toMatchObject({ code: 112 })
+})

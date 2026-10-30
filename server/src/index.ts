@@ -69,7 +69,8 @@ app.route('/accounts/:accountId', quickMessageRoutes(quickMessages))
 app.route('/accounts/:accountId', autoReplyRoutes(autoReplies))
 app.route('/accounts/:accountId', todoRoutes(todos))
 
-const server = Bun.serve({ hostname: '127.0.0.1', port: config.port, fetch: app.fetch, websocket })
+// idleTimeout (s): turning E2EE on waits up to 10 s for the peer's ack after its own socket round trips; Bun's default 10 s cuts it
+const server = Bun.serve({ hostname: '127.0.0.1', port: config.port, fetch: app.fetch, websocket, idleTimeout: 60 })
 
 console.log('READY ' + JSON.stringify({ port: server.port, token: config.token }))
 

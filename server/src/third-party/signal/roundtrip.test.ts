@@ -8,9 +8,12 @@ import { E2eeMessageReceiver, E2EE_STATUS } from './e2ee-message-receiver'
 import { SignalServerManager, type BundleKey, type DeviceBundle, type E2eeList, type SessionEvent } from './signal-server-manager'
 
 type Call = { uid: string; cmd: number; subCmd: number; data: Record<string, any> }
+const UNKNOWN_EXCEPTION = Symbol('112')
 
 // Zalo's signal server as far as these tests need it: bundles per (uid, device), one one-time prekey handed out per
-// GET_BUNDLE, replies in PC's envelope { error_code, data: JSON { error_code, data: { reqId, data } }, encrypt: 0 }
+// GET_BUNDLE, replies in PC's envelope { error_code, data: JSON { error_code, data: { reqId, data } }, encrypt: 0 }.
+// As the live server: a GET_BUNDLE of your own uid for every device (-1) fails with 112 and no reqId; your own
+// devices are asked one by one, -2 for one without keys.
 class FakeZalo {
   bundles = new Map<string, Map<number, DeviceBundle & { opKeys: BundleKey[] }>>()
   calls: Call[] = []
@@ -21,7 +24,8 @@ class FakeZalo {
       const { reqId, data } = body as { reqId: string; data: Record<string, any> }
       this.calls.push({ uid, cmd, subCmd, data })
       const reply = this.handle(uid, deviceId, cmd, data)
-      queueMicrotask(() => void rpc.onFrame(cmd, subCmd, { error_code: 0, encrypt: 0, data: JSON.stringify({ error_code: 0, data: { reqId, data: reply } }) }))
+      const frame = reply === UNKNOWN_EXCEPTION ? { error_code: 112, encrypt: 0, data: JSON.stringify({ error_code: 112, error_message: 'Lỗi không xác định' }) } : { error_code: 0, encrypt: 0, data: JSON.stringify({ error_code: 0, data: { reqId, data: reply } }) }
+      queueMicrotask(() => void rpc.onFrame(cmd, subCmd, frame))
     })
     return rpc
   }
@@ -40,7 +44,11 @@ class FakeZalo {
         return { ts: 1 }
       case 541: {
         const of = String(d.uids[0].uid)
-        return { keys: [{ uid: of, keys: [...(this.bundles.get(of)?.values() ?? [])].map((b) => ({ ...b, opKeys: b.opKeys.splice(0, 1) })) }] }
+        const wanted: number = d.uids[0].deviceId
+        if (of === uid && wanted === -1) return UNKNOWN_EXCEPTION
+        const devices = [...(this.bundles.get(of)?.values() ?? [])].filter((b) => wanted === -1 || b.deviceId === wanted)
+        if (wanted !== -1 && !devices.some((b) => b.preKey)) return { err: -2 }
+        return { keys: [{ uid: of, keys: devices.map((b) => ({ ...b, opKeys: b.opKeys.splice(0, 1) })) }] }
       }
       case 563:
         return this.list

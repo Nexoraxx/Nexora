@@ -66,6 +66,12 @@ const GIF_PAGE = 10
 const GIF_SRC_CHAT = 1
 // ponytail: only text is end-to-end encrypted so far; replies, media, stickers, links, cards, forwards are refused there
 const E2EE_UNSUPPORTED = 'Nexora chưa hỗ trợ gửi loại tin nhắn này trong trò chuyện mã hóa đầu cuối'
+// this account's devices in PC's MISS_BUNDLE_KEY_* messages, in PC's order
+const MY_DEVICE_NAMES: [number, string][] = [
+  [0, 'Zalo trên điện thoại'],
+  [2, 'Zalo PC'],
+  [1, 'Zalo trên trình duyệt máy tính'],
+]
 // stored content of attachment messages (photo, file, link, card, sticker, ...); params is a JSON string
 type Attachment = { title?: string; description?: string; href?: string; thumb?: string; action?: string; params?: unknown; id?: number; catId?: number; type?: number }
 
@@ -769,14 +775,23 @@ export default class MessageService implements IMessageService {
     try {
       return { status: await this.e2ee.enable(accountId, threadId) }
     } catch (e) {
-      const code = (e as { code?: unknown }).code
+      const { code, errData } = e as { code?: unknown; errData?: { uid: string; deviceId: number }[] }
       if (code === 'not_ready') throw new HTTPException(409, { message: 'Đang thiết lập cấu hình mã hóa đầu cuối, vui lòng thử lại sau' })
+      const name = this.messages.displayName(accountId, threadId) ?? threadId
+      // PC's BUNDLE_KEY_ERROR texts
+      const mine = new Set((errData ?? []).filter((d) => String(d.uid) === accountId).map((d) => Number(d.deviceId)))
       const message =
-        code === 'NO_DEVICE'
-          ? `${this.messages.displayName(accountId, threadId) ?? threadId} không nằm trong danh sách thử nghiệm tính năng Mã hóa đầu cuối. Hãy thử nâng cấp với trò chuyện khác.`
-          : code === 'timeout' || code === 'offline'
-            ? 'Hãy kiểm tra lại kết nối mạng và thử lại'
-            : 'Vui lòng thử lại'
+        code === 'NO_DEVICE' || code === -2
+          ? `${name} không nằm trong danh sách thử nghiệm tính năng Mã hóa đầu cuối. Hãy thử nâng cấp với trò chuyện khác.`
+          : code === -3
+            ? `${name} cần cập nhật phiên bản Zalo mới`
+            : code === -5
+              ? 'Bạn cần cập nhật Zalo bản mới trên điện thoại và máy tính để nâng cấp mã hóa đầu cuối.'
+              : code === -9 && mine.size
+                ? `Hãy đăng nhập lại ${MY_DEVICE_NAMES.filter(([d]) => mine.has(d)).map(([, n]) => n).join(', ')} và thử nâng cấp lại`
+                : code === 'timeout' || code === 'offline'
+                  ? 'Hãy kiểm tra lại kết nối mạng và thử lại'
+                  : 'Vui lòng thử lại'
       console.error(`[${accountId}] e2ee upgrade ${threadId}`, e)
       throw new HTTPException(502, { message })
     }

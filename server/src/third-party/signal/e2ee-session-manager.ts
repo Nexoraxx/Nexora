@@ -12,6 +12,10 @@ const REQUEST_BUNDLE = 2
 const DELETE_REINIT = 3
 // PC's UPGRADING_TIMEOUT: how long a manual upgrade waits for the peer's ack before calling it pending
 const UPGRADING_TIMEOUT = 10_000
+// our other device slots (PC's LIST_SUBDEVICES 0 phone, 1 web, 2 PC = this client), each asked for on its own
+const MY_SUBDEVICES = [0, 1]
+// GET_BUNDLE errors for a device that has no usable keys (PC's bundle_err_stop_retry; -9 is the raw -9.x)
+const NO_BUNDLE = new Set([-2, -3, -5, -7, -9])
 
 // rebuild: new sessions even where one exists; forwardSubdevice: the INIT lists our other devices
 type BuildOptions = { rebuild?: boolean; isReInit?: boolean; msgInfoNoti?: boolean; forwardSubdevice?: boolean }
@@ -138,7 +142,20 @@ export class E2eeSessionManager extends EventEmitter {
 
   private async build(uid: string, { rebuild = false, isReInit = false, msgInfoNoti = false, forwardSubdevice = false }: BuildOptions) {
     const lib = getLibSignal()
-    const bundles: DeviceBundle[] = await this.rpc.getBundle(uid, { isReInit, msgInfoNoti })
+    // ours: one device at a time as PC's _initSessionSubDevices, skipping slots without keys
+    const bundles: DeviceBundle[] =
+      uid === this.accountId
+        ? (
+            await Promise.all(
+              MY_SUBDEVICES.map((deviceId) =>
+                this.rpc.getBundle(uid, { deviceId, isReInit: true }).catch((e) => {
+                  if (NO_BUNDLE.has((e as { code?: number }).code!)) return []
+                  throw e
+                }),
+              ),
+            )
+          ).flat()
+        : await this.rpc.getBundle(uid, { isReInit, msgInfoNoti })
     const devices: E2eeMeta['devices'] = []
     const inits: { deviceId: number; data: string }[] = []
     for (const b of bundles) {

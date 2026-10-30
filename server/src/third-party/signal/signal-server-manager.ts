@@ -59,12 +59,13 @@ export class SignalServerManager extends EventEmitter {
   // a reply is { error_code, data, encrypt }: data decrypts to { error_code, data: { reqId, data } }
   async onFrame(cmd: number, subCmd: number, frame: Frame, cipherKey?: string) {
     if (frame.error_code) {
-      // PC's handleRespDataError: the request is still named in the raw data
+      // PC's handleRespDataError: the request may be named in the raw data; Zalo's 112 isn't, so it fails the command's
+      // oldest pending request rather than leaving it to time out
       let reqId: string | undefined
       try {
         reqId = JSON.parse(String(frame.data))?.data?.reqId
       } catch {}
-      return this.settle(reqId, frame.error_code)
+      return this.settle(reqId ?? [...this.pending].find(([, p]) => p.cmd === cmd)?.[0], frame.error_code)
     }
     const reply = (await decodeFrame(frame, cipherKey)) as Reply | undefined
     if (!reply) return
@@ -99,7 +100,8 @@ export class SignalServerManager extends EventEmitter {
         reject(e)
       }
     }).then((d) => {
-      if (d?.err) throw failure(cmd, d.err)
+      // errData: GET_BUNDLE's -9 lists the devices ({ uid, deviceId }) whose keys are missing
+      if (d?.err) throw Object.assign(failure(cmd, d.err), { errData: d.errData })
       return d as T
     })
   }
@@ -123,10 +125,11 @@ export class SignalServerManager extends EventEmitter {
     return this.request(SIGNAL_CMD.SUBMIT_PREKEYS, { deviceId: 2, id: regId, opKeys })
   }
 
-  // every device of uid (deviceId -1); msgInfoNoti: a manual upgrade the server tells the peer about
-  async getBundle(uid: string, { isReInit = false, msgInfoNoti = false } = {}): Promise<DeviceBundle[]> {
+  // a peer's devices (deviceId -1 = all of them; Zalo refuses -1 for your own uid); msgInfoNoti: a manual upgrade the
+  // server tells the peer about
+  async getBundle(uid: string, { deviceId = -1, isReInit = false, msgInfoNoti = false } = {}): Promise<DeviceBundle[]> {
     const d = await this.request<{ keys?: { uid: string; keys?: DeviceBundle[] }[] }>(SIGNAL_CMD.GET_BUNDLE, {
-      uids: [{ uid, deviceId: -1 }],
+      uids: [{ uid, deviceId }],
       isReInit: isReInit ? 1 : 0,
       msgInfoNoti: msgInfoNoti ? 1 : 0,
       isAutoUpgrade: 0,
