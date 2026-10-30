@@ -18,6 +18,7 @@ export type MessageRow = {
   reactions: ReactionCount[]
   seenUids: string[]
   deliveredUids: string[]
+  e2eeStatus?: number
 }
 
 export type Thread = {
@@ -32,6 +33,7 @@ export type Thread = {
   dName: string | null
   messageTime: number
   unread: number
+  e2eeStatus?: number
 }
 
 export type MessagePerson = { userId: string; name: string; avatar: string }

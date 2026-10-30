@@ -354,3 +354,16 @@ test('end-to-end encrypted messages (cmd 551) are kept as chat.e2ee, out of sear
   expect(thread(messages, 'u1')).toMatchObject({ msgType: 'chat.e2ee' })
   expect(messages.search(ME, 'u1', { q: cipher, limit: 20, offset: 0 } as never)).toEqual([])
 })
+
+test('end-to-end encrypted messages (cmd 551) are decrypted and stored with e2eeStatus: 1 when deciphered cache available', async () => {
+  const { db, zca, messages } = setup()
+  db.run(
+    `INSERT INTO e2ee_deciphered (accountId, key, content, ts) VALUES ('me', 'c41_u1_0', 'Xin chào bí mật', 1000)`
+  )
+  zca.emit('message', ME, new UserMessage(ME, { ...raw('41', 'u1', '0', 'AzMIlAMSIQUZJqd4T6O6Ehfg'), cmd: 551 } as TMessage))
+  await tick()
+  const [m] = (await messages.history(ME, 'u1', undefined, 50)).messages
+  expect(m).toMatchObject({ msgType: 'webchat', content: 'Xin chào bí mật', e2eeStatus: 1 })
+  expect(thread(messages, 'u1')).toMatchObject({ msgType: 'webchat', content: 'Xin chào bí mật', e2eeStatus: 1 })
+})
+

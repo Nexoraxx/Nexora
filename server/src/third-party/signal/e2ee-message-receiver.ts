@@ -26,7 +26,10 @@ export class E2eeMessageReceiver {
 
     const cacheKey = `${cliMsgId}_${uidFrom}_${idTo}`
     if (cliMsgId) {
-      const cached = await this.store.getDeciphered(cacheKey)
+      let cached = await this.store.getDeciphered(cacheKey)
+      if (!cached && idTo === this.accountId) {
+        cached = await this.store.getDeciphered(`${cliMsgId}_${uidFrom}_0`)
+      }
       if (cached) return { plainText: cached, e2eeStatus: 1 }
     }
 

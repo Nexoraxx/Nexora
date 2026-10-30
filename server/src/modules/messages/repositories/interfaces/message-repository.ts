@@ -31,8 +31,9 @@ export type StoredMessage = Row & {
   at: number | null
   cmd: number | null
   staredDttm: number | null
+  e2eeStatus?: number | null
 }
-export type ThreadRow = Omit<Thread, 'isGroup' | 'content'> & { isGroup: number; message: string | null }
+export type ThreadRow = Omit<Thread, 'isGroup' | 'content'> & { isGroup: number; message: string | null; e2eeStatus?: number }
 
 export default interface IMessageRepository {
   tagE2ee(): void
