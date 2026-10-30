@@ -33,6 +33,7 @@ export type MessageRow = {
   reactions: ReactionCount[];
   seenUids: string[];
   deliveredUids: string[];
+  e2eeStatus?: number;
 };
 
 export type Thread = {
@@ -47,6 +48,7 @@ export type Thread = {
   dName: string | null;
   messageTime: number;
   unread: number;
+  e2eeStatus?: number;
 };
 // Zalo profile ("Thông tin tài khoản"); sdob is already cut down by the owner's birthday privacy, gender 0 = Nam, 1 = Nữ
 export type Profile = { userId: string; displayName: string; zaloName: string; avatar: string; cover: string; status: string; gender: number | null; sdob: string; phoneNumber: string | null };

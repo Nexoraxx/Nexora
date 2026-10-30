@@ -20,7 +20,7 @@ import { SelectionBar } from "@/app/chat/components/conversation/selection-bar";
 import { Composer } from "@/app/chat/components/input/composer";
 import { ForwardDialog } from "@/app/chat/components/dialogs/forward-dialog";
 import { ReplacePinDialog } from "@/app/chat/components/dialogs/replace-pin-dialog";
-import { ClockIcon, EllipsisIcon, PanelRightIcon, SearchIcon, StarIcon } from "lucide-react";
+import { ClockIcon, EllipsisIcon, LockIcon, PanelRightIcon, SearchIcon, StarIcon } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
@@ -427,7 +427,14 @@ export function Conversation({
               <Avatar src={live?.avatar ?? target.avatar} name={name} size={40} />
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-base font-semibold">{name}</div>
+              <div className="truncate text-base font-semibold flex items-center gap-1.5">
+                <span>{name}</span>
+                {live?.e2eeStatus === 1 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-normal text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5" title="Cuộc trò chuyện này được mã hóa đầu cuối">
+                    <LockIcon className="size-3" /> Mã hóa đầu cuối
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-muted-foreground">
                 {target.isGroup ? "Nhóm" : isCloud ? "Lưu và đồng bộ dữ liệu giữa các thiết bị" : lastOnline ? lastSeen(lastOnline, Date.now()) : ""}
               </div>

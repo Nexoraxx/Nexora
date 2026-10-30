@@ -13,7 +13,7 @@ import { RichText } from "@/app/chat/components/message/rich-text";
 import { GlobalSearch } from "@/app/chat/components/search/global-search";
 import { labelOf, time, summary } from "@/app/chat/utils/chat.utils";
 import { Conversation } from "@/app/chat/components/conversation/conversation";
-import { BellOffIcon, EllipsisIcon, PinIcon } from "lucide-react";
+import { BellOffIcon, EllipsisIcon, LockIcon, PinIcon } from "lucide-react";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
@@ -168,7 +168,14 @@ export function Chat({
                       <Avatar src={t.avatar} name={t.name ?? "?"} size={44} />
                       <div className="min-w-0 flex-1">
                         <div className="flex justify-between gap-2">
-                          <span className={cn("truncate", (t.unread || dot) && "font-semibold")}>{t.name ?? t.threadId}</span>
+                          <span className={cn("truncate inline-flex items-center gap-1", (t.unread || dot) && "font-semibold")}>
+                            {t.name ?? t.threadId}
+                            {t.e2eeStatus === 1 && (
+                              <span title="Mã hóa đầu cuối" className="inline-flex items-center">
+                                <LockIcon className="size-3 text-emerald-600 shrink-0" />
+                              </span>
+                            )}
+                          </span>
                           <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3">
                             {t.threadId in settings.muted && <BellOffIcon />}
                             {pinned.has(t.threadId) && <PinIcon />}
