@@ -135,7 +135,8 @@ export type Reminder = { id: string; title: string; startTime: number; repeat: n
 export type MediaItem = { msgId: string; msgType: string; content: unknown; sendDttm: number };
 export type AvatarPhoto = { photoId: string; thumbnail: string; url: string };
 // msgId: jump to that message on open (pins, search, "Tin đánh dấu")
-export type ChatTarget = { threadId: string; isGroup: boolean; name: string | null; avatar: string | null; msgId?: string };
+// accountId: the account to chat as, set when opened from "Tất cả"; otherwise the open account
+export type ChatTarget = { threadId: string; isGroup: boolean; name: string | null; avatar: string | null; msgId?: string; accountId?: string };
 // anim.frames > 1: horizontal sprite strip (duration ms per frame); 1: anim.url is itself animated (webp/gif)
 export type Sticker = { id: number; cateId: number; type: number; text: string; thumb: string; anim: { url: string; frames: number; duration: number } | null };
 export type StickerCategory = { id: number; name: string; iconUrl: string; totalImage: number; added?: boolean };
@@ -161,7 +162,9 @@ export type ServerEvent =
   | { type: "settings"; accountId: string }
   | { type: "quick_messages"; accountId: string }
   | { type: "auto_replies"; accountId: string }
-  | { type: "todos"; accountId: string };
+  | { type: "todos"; accountId: string }
+  // a "Gửi hàng loạt" run started, moved on or changed state
+  | { type: "bulk_sends"; accountId: string };
 
 // a pinned topic of the pin bar; msgId set when it pins a message, msgType is Zalo's numeric code (1 text, 32 photo, ...)
 export type Pin = {

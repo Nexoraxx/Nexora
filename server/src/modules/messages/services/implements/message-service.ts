@@ -134,7 +134,8 @@ const chunks = <T>(items: T[], size: number) => Array.from({ length: Math.ceil(i
 
 @injectable()
 export default class MessageService implements IMessageService {
-  private delivered = new Map<string, Message[]>()
+  // e2ee: a decrypted E2EE message, acked on the E2EE service
+  private delivered = new Map<string, { msg: Message; e2ee: boolean }[]>()
   // "account:thread:anchor" -> when the group cloud was last asked
   private cloudCalls = new Map<string, number>()
 
@@ -233,7 +234,8 @@ export default class MessageService implements IMessageService {
     this.messages.purgeExpired(accountId)
     return this.messages
       .starred(accountId)
-      .map((r) => this.toMessageRow(accountId, r))
+      // starredAt: lists of several accounts merge on it
+      .map((r) => ({ ...this.toMessageRow(accountId, r), starredAt: r.staredDttm }))
   }
 
   // Zalo PC "Thông tin tin nhắn" of an own group message: members who have seen / received it, from getStatusMsg's
@@ -355,8 +357,28 @@ export default class MessageService implements IMessageService {
   }
 
   async sendSticker(accountId: string, threadId: string, sticker: SendStickerRequest) {
-    this.requirePlain(accountId, threadId)
-    const res = await this.zca.get(accountId).sendSticker(sticker, threadId, this.type(accountId, threadId))
+    const api = this.zca.get(accountId)
+    if (!this.messages.isGroup(accountId, threadId) && this.e2eeOn(accountId, threadId)) {
+      const sent = await this.e2ee.sendSticker(accountId, api, threadId, { id: sticker.id, catId: sticker.cateId, type: sticker.type }).catch((e) => {
+        throw e instanceof HTTPException || e instanceof ZaloApiError ? e : new HTTPException(502, { message: `Không gửi được nhãn dán mã hóa đầu cuối: ${e.message}` })
+      })
+      const row: Row = {
+        accountId,
+        msgId: sent.msgId,
+        cliMsgId: sent.cliMsgId,
+        toUid: threadId,
+        fromUid: accountId,
+        msgType: 'chat.sticker',
+        sendDttm: Date.now(),
+        message: JSON.stringify(sent.content),
+        cmd: E2EE_CMDS[0],
+        e2eeStatus: E2EE_STATUS.OK,
+      }
+      this.messages.save(accountId, [{ row, isGroup: false, isSelf: true }])
+      this.announce(accountId, [sent.msgId])
+      return { msgId: sent.msgId }
+    }
+    const res = await api.sendSticker(sticker, threadId, this.type(accountId, threadId))
     return { msgId: String(res.msgId) }
   }
 
@@ -420,8 +442,27 @@ export default class MessageService implements IMessageService {
 
   // Zalo PC's sendGif: a Giphy GIF by URL, params on the query string; zca can only upload a .gif file
   async sendGif(accountId: string, threadId: string, gif: Gif) {
-    this.requirePlain(accountId, threadId)
     const api = this.zca.get(accountId)
+    if (!this.messages.isGroup(accountId, threadId) && this.e2eeOn(accountId, threadId)) {
+      const sent = await this.e2ee.sendGif(accountId, api, threadId, { url: gif.url, thumb: gif.thumb, width: gif.width, height: gif.height }).catch((e) => {
+        throw e instanceof HTTPException || e instanceof ZaloApiError ? e : new HTTPException(502, { message: `Không gửi được GIF mã hóa đầu cuối: ${e.message}` })
+      })
+      const row: Row = {
+        accountId,
+        msgId: sent.msgId,
+        cliMsgId: sent.cliMsgId,
+        toUid: threadId,
+        fromUid: accountId,
+        msgType: 'chat.gif',
+        sendDttm: Date.now(),
+        message: JSON.stringify(sent.content),
+        cmd: E2EE_CMDS[0],
+        e2eeStatus: E2EE_STATUS.OK,
+      }
+      this.messages.save(accountId, [{ row, isGroup: false, isSelf: true }])
+      this.announce(accountId, [sent.msgId])
+      return
+    }
     const type = this.type(accountId, threadId)
     await zaloPost(
       api,
@@ -643,6 +684,7 @@ export default class MessageService implements IMessageService {
   // ===== Sync (Zalo PC order: preload last messages, then drain the offline queues over the socket) =====
 
   private async preload(accountId: string) {
+    this.repairE2ee(accountId)
     const local = this.messages.previews(accountId)
     const res = await this.zca.get(accountId).getLastMessages(local.map((p) => ({ threadId: p.threadId, type: p.isGroup ? ThreadType.Group : ThreadType.User, msgId: p.msgId })))
     const msgs = [...(res.msgs ?? []).map((m) => new UserMessage(accountId, m)), ...(res.groupMsgs ?? []).map((m) => new GroupMessage(accountId, m))]
@@ -680,11 +722,12 @@ export default class MessageService implements IMessageService {
   }
 
   private async onLive(accountId: string, msg: Message) {
-    const { saved, undone } = this.store(accountId, [msg], await this.decryptAll(accountId, [msg]))
+    const decs = await this.decryptAll(accountId, [msg])
+    const { saved, undone } = this.store(accountId, [msg], decs)
     this.announce(accountId, saved.map((s) => s.row.msgId))
     for (const msgId of undone) broadcast({ type: 'undo', accountId, msgId })
     this.learn(accountId, saved)
-    if (!msg.isSelf) this.queueDelivered(accountId, msg)
+    if (!msg.isSelf) this.queueDelivered(accountId, msg, decs.get(String(msg.data.msgId))?.status === E2EE_STATUS.OK)
   }
 
   private onUndo(accountId: string, undo: Undo) {
@@ -803,10 +846,10 @@ export default class MessageService implements IMessageService {
   }
 
   // Zalo PC acks every received message so the sender sees "Đã nhận"; batched per thread (groups need one grid per call).
-  private queueDelivered(accountId: string, msg: Message) {
+  private queueDelivered(accountId: string, msg: Message, e2ee = false) {
     const queue = this.delivered.get(accountId) ?? []
     if (!queue.length) setTimeout(() => void this.flushDelivered(accountId).catch((e) => console.error('[messages] delivered', e)), 500)
-    queue.push(msg)
+    queue.push({ msg, e2ee })
     this.delivered.set(accountId, queue)
   }
 
@@ -814,14 +857,29 @@ export default class MessageService implements IMessageService {
     const queue = this.delivered.get(accountId) ?? []
     this.delivered.delete(accountId)
     if (!this.zca.has(accountId)) return
-    const byThread = Map.groupBy(queue, (m) => `${m.type}:${m.data.idTo}`)
-    for (const msgs of byThread.values())
-      for (const batch of chunks(msgs, RECEIPT_BATCH))
-        await this.zca.get(accountId).sendDeliveredEvent(
-          false,
-          batch.map(({ data }): SendDeliveredEventMessageParams => ({ msgId: data.msgId, cliMsgId: data.cliMsgId, uidFrom: data.uidFrom, idTo: data.idTo, msgType: data.msgType, st: data.st, at: data.at, cmd: data.cmd, ts: data.ts })),
-          batch[0].type,
-        )
+    const api = this.zca.get(accountId)
+    const byThread = Map.groupBy(queue, ({ msg, e2ee }) => `${msg.type}:${msg.data.idTo}:${e2ee}`)
+    for (const items of byThread.values())
+      for (const batch of chunks(items, RECEIPT_BATCH)) {
+        const msgs = batch.map((i) => i.msg)
+        if (batch[0].e2ee) await this.sendE2eeDelivered(api, accountId, msgs)
+        else
+          await api.sendDeliveredEvent(
+            false,
+            msgs.map(({ data }): SendDeliveredEventMessageParams => ({ msgId: data.msgId, cliMsgId: data.cliMsgId, uidFrom: data.uidFrom, idTo: data.idTo, msgType: data.msgType, st: data.st, at: data.at, cmd: data.cmd, ts: data.ts })),
+            batch[0].msg.type,
+          )
+      }
+  }
+
+  // PC's _doSendDelivered for decrypted E2EE messages: zca's fields plus the sending device (fDI), on the E2EE service
+  private sendE2eeDelivered(api: API, accountId: string, msgs: Message[]) {
+    const or = <T>(v: T) => (v || v === 0 ? v : -1)
+    const data = msgs.map(({ data: d }) => {
+      const ext = (typeof d.paramsExt === 'string' ? JSON.parse(d.paramsExt) : d.paramsExt) as { platformType?: number } | undefined
+      return { cmi: d.cliMsgId, gmi: d.msgId, si: d.uidFrom, di: d.idTo === accountId ? '0' : d.idTo, mt: d.msgType, st: or(d.st), at: or(d.at), cmd: or(d.cmd), ts: or(d.ts), fDI: ext?.platformType }
+    })
+    return zaloPost(api, 'chat_e2e', '/api/e2ee/pc/t/message/delivered', { msgInfos: JSON.stringify({ seen: 0, data }) })
   }
 
   // Threads without a read marker (new on this device) ask Zalo where the account stopped reading.
@@ -859,6 +917,36 @@ export default class MessageService implements IMessageService {
       for (const msgId of undone) this.messages.recall(accountId, msgId)
     })()
     return { saved, undone }
+  }
+
+  // Heal messages a past bug stored as raw ciphertext: E2EE offline-queue items (transport cmd 513/713) skipped
+  // decryption and the partial upsert overwrote the message with the cipher. The decryption is still in
+  // e2ee_deciphered, so re-apply it and give the rows the E2EE message cmd so they read as decrypted.
+  private repairE2ee(accountId: string) {
+    const rows = this.db
+      .query<{ msgId: string; content: string }, [string]>(
+        `SELECT m.msgId, d.content AS content FROM message m
+         JOIN e2ee_deciphered d ON d.accountId = m.accountId AND d.key = m.cliMsgId || '_' || m.fromUid
+         WHERE m.accountId = ? AND m.cmd IN (513, 713)`,
+      )
+      .all(accountId)
+    if (!rows.length) return
+    this.db.transaction(() => {
+      for (const r of rows) {
+        const dec = JSON.parse(r.content) as { content: unknown; quote?: unknown }
+        this.db.run(`UPDATE message SET message = ?, msgText = ?, quote = ?, cmd = ?, e2eeStatus = ? WHERE accountId = ? AND msgId = ?`, [
+          JSON.stringify(dec.content),
+          textOf(dec.content),
+          dec.quote ? JSON.stringify(dec.quote) : null,
+          E2EE_CMDS[0],
+          E2EE_STATUS.OK,
+          accountId,
+          r.msgId,
+        ])
+      }
+    })()
+    console.log(`[${accountId}] e2ee: healed ${rows.length} offline message(s) stored as ciphertext`)
+    broadcast({ type: 'threads', accountId })
   }
 
   private addReceipt(accountId: string, msgId: string, add: { seenUids?: string[]; deliveredUids?: string[] }) {
@@ -905,7 +993,9 @@ export default class MessageService implements IMessageService {
 
   // 1-1 E2EE messages from the offline queue
   private async onE2eeOffline(accountId: string, raws: TMessage[]) {
-    const msgs = raws.map((m) => new UserMessage(accountId, m))
+    // these come off the E2EE offline queue carrying its transport cmd (513/713); they are 1-1 E2EE messages, so give
+    // them the E2EE message cmd (551) or decryptAll/toRow would treat them as plaintext and store the raw ciphertext
+    const msgs = raws.map((m) => new UserMessage(accountId, { ...m, cmd: E2EE_CMDS[0] }))
     const { saved } = this.store(accountId, msgs, await this.decryptAll(accountId, msgs))
     if (saved.length) broadcast({ type: 'threads', accountId })
     this.learn(accountId, saved)

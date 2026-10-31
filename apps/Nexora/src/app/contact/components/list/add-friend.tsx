@@ -17,7 +17,7 @@ export function AddFriend({ base, run }: { base: string; run: (path: string, met
   const [error, setError] = useState<string>();
 
   return (
-    <div className="border-b py-2">
+    <div className="flex flex-col gap-2">
       <form
         className="flex items-center gap-1.5"
         onSubmit={(e) => {

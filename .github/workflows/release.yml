@@ -1,0 +1,82 @@
+# Installers for Windows, macOS (Apple Silicon + Intel) and Linux.
+# - push a tag "v0.1.0" (same as "version" in apps/Nexora/src-tauri/tauri.conf.json): a draft GitHub Release with
+#   every installer attached, published by hand after a check
+# - "Run workflow" (Actions tab): the same builds, as downloadable artifacts only
+# Not signed: Windows SmartScreen warns on first run; macOS needs right click → Open (or `xattr -cr Nexora.app`).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/Nexora/src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - name: Install
+        shell: bash
+        run: |
+          cd server && bun install --frozen-lockfile
+          cd ../apps/Nexora && bun install --frozen-lockfile
+
+      # beforeBuildCommand (tauri.release.conf.json) builds the app and compiles the server for this target into
+      # src-tauri/binaries, which Tauri ships beside the app
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/Nexora
+          tauriScript: bun run tauri
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
+          # empty on "Run workflow": build only, no release
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: Nexora __VERSION__
+          releaseBody: Tải bộ cài cho máy của bạn ở mục Assets bên dưới.
+          releaseDraft: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexora-${{ matrix.target }}
+          path: |
+            apps/Nexora/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            apps/Nexora/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+            apps/Nexora/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            apps/Nexora/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            apps/Nexora/src-tauri/target/${{ matrix.target }}/release/bundle/rpm/*.rpm
+            apps/Nexora/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+          if-no-files-found: error

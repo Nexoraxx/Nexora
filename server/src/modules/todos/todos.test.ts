@@ -58,9 +58,11 @@ test('todos: verify pages, only mine, my status; create sends the anchor first a
 
   // PC's default task_setting: off, nothing fetched
   expect(await todos.list('me')).toEqual({ enabled: false, todos: [] })
+  expect(todos.isEnabled('me')).toBe(false)
   expect(nexoraGet).not.toHaveBeenCalled()
 
   feature = 1
+  expect(todos.isEnabled('me')).toBe(true)
   const { enabled, todos: list } = await todos.list('me')
   expect(enabled).toBe(true)
   expect(nexoraGet.mock.calls.map(([c]) => [c.url, c.params.scrollId, c.params.lastUpdatedTime])).toEqual([

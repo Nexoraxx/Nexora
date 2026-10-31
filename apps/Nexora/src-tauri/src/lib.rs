@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -38,19 +38,35 @@ fn clipboard_files() -> Vec<String> {
     Vec::new()
 }
 
-// ponytail: dev-only, runs the server source with `bun` from this repo. For release, ship it as a sidecar
-// built with `bun build --compile` and resolve that binary instead.
+// Dev: the server's source, run with `bun` from this repo.
+#[cfg(debug_assertions)]
+fn server_command() -> Command {
+    let mut cmd = Command::new("bun");
+    cmd.args(["run", "src/index.ts"]).current_dir(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../server"));
+    cmd
+}
+
+// Release: the server executable from scripts/build-server.ts, which Tauri's externalBin puts beside the app's own
+// (Contents/MacOS on macOS), its target triple dropped.
+#[cfg(not(debug_assertions))]
+fn server_command() -> Command {
+    let app = std::env::current_exe().expect("app executable path");
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(app.with_file_name(format!("nexora-server{}", std::env::consts::EXE_SUFFIX)));
+    // it's a console program: without CREATE_NO_WINDOW, Windows opens a console window beside the app
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000);
+    cmd
+}
+
 fn spawn_server(data_dir: &Path) -> Server {
-    let server_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../server");
-    let mut child = Command::new("bun")
-        .args(["run", "src/index.ts"])
-        .current_dir(server_dir)
+    let mut child = server_command()
         .env("DATA_DIR", data_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .expect("failed to start the Nexora server (is `bun` on PATH?)");
+        .expect("failed to start the Nexora server (dev: is `bun` on PATH?)");
 
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     let info = loop {

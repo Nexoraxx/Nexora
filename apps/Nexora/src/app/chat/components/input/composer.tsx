@@ -21,21 +21,12 @@ import { QuickSuggestions } from "@/app/chat/components/input/quick-suggestions"
 import { useQuickMessages } from "@/app/settings/hooks/useQuickMessages";
 import { summary } from "@/app/chat/utils/chat.utils";
 import { PendingFiles } from "@/app/chat/components/input/pending-files";
-import {
-  AlarmClockIcon,
-  ContactIcon,
-  ListChecksIcon,
-  PaperclipIcon,
-  PlusIcon,
-  SmileIcon,
-  StickerIcon,
-  StickyNoteIcon,
-  TypeIcon,
-  UsersIcon,
-  XIcon,
-} from "lucide-react";
+import { ToolbarDialog } from "@/app/chat/components/toolbar/toolbar-editor";
+import { COMPOSER_BAR, COMPOSER_TOOLS, GROUP_ONLY } from "@/app/chat/constants/toolbar.constants";
+import { arrange, useLayout } from "@/shared/hooks/use-toolbar";
+import { PlusIcon, Settings2Icon, UsersIcon, XIcon } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { cn } from "@/shared/utils/shadcn";
 
@@ -96,6 +87,8 @@ export function Composer({
   const [cards, setCards] = useState(false);
   // "Tạo bình chọn" / "Tạo ghi chú" (groups), "Tạo nhắc hẹn"
   const [creating, setCreating] = useState<"poll" | "note" | "reminder">();
+  const layout = useLayout(COMPOSER_BAR);
+  const [customizing, setCustomizing] = useState(false);
   // link preview of the URL in the text; null = Zalo has none; `closed` = the URL whose preview was dismissed
   const [preview, setPreview] = useState<{ url: string; data?: LinkPreview | null }>();
   const [closed, setClosed] = useState<string>();
@@ -231,8 +224,22 @@ export function Composer({
     setPicked((p) => [...p, { uid: s.uid, name: s.name }]);
   };
 
-  // over the glass, unpressed controls get a translucent white
-  const toggle = (on: boolean) => cn("bg-white/60", on && "bg-primary/15 hover:bg-primary/20");
+  // borderless tools over the glass: only the pressed one is tinted
+  const toggle = (on: boolean) => cn("border-transparent bg-transparent text-muted-foreground shadow-none hover:bg-white/60 hover:text-foreground", on && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary");
+  // what each tool does and whether its panel is open, wherever the user put it
+  const tools: Record<string, { run: () => void; on?: boolean; title?: string }> = {
+    file: { run: () => files.current?.click() },
+    emoji: { run: () => setPanel((p) => (p === "emoji" ? undefined : "emoji")), on: panel === "emoji" },
+    sticker: { run: () => setPanel((p) => (p === "sticker" ? undefined : "sticker")), on: panel === "sticker" },
+    card: { run: () => setCards(true), on: cards },
+    format: { run: () => setFormatting(!formatting), on: formatting, title: "Định dạng tin nhắn (Ctrl + Shift + X)" },
+    poll: { run: () => setCreating("poll"), on: creating === "poll" },
+    note: { run: () => setCreating("note"), on: creating === "note" },
+    reminder: { run: () => setCreating("reminder"), on: creating === "reminder" },
+  };
+  const arranged = arrange(COMPOSER_TOOLS, layout).filter((t) => groupId || !GROUP_ONLY.has(t.id));
+  const barTools = arranged.filter((t) => t.place === "bar");
+  const menuTools = arranged.filter((t) => t.place === "menu");
 
   if (!online) return <div className="p-4 text-center text-xs text-muted-foreground">Tài khoản chưa kết nối, không gửi được tin nhắn</div>;
   return (
@@ -255,6 +262,7 @@ export function Composer({
           onGif={(g: Gif) => send(api(`${base}/gifs`, "POST", g).then(() => setPanel(undefined)))}
         />
       )}
+      {customizing && <ToolbarDialog onClose={() => setCustomizing(false)} />}
       {cards && <CardPicker accountId={accountId} onSend={(userIds, withPhone) => api(`${base}/cards`, "POST", { userIds, withPhone })} onClose={() => setCards(false)} />}
       {creating === "poll" && groupId && <PollCreate base={`/accounts/${accountId}/groups/${groupId}`} onClose={() => setCreating(undefined)} />}
       {creating === "note" && groupId && <NoteEditor base={`/accounts/${accountId}/groups/${groupId}`} onClose={() => setCreating(undefined)} />}
@@ -317,40 +325,27 @@ export function Composer({
         )}
       {/* too narrow for one row: the tools wrap above the input, as Zalo PC lays them out */}
       <div className="flex flex-wrap items-end gap-1.5">
-        <Button variant="outline" size="icon" className={toggle(false)} title="Gửi ảnh / file" onClick={() => files.current?.click()}>
-          <PaperclipIcon />
-        </Button>
-        <Button variant="outline" size="icon" className={toggle(panel === "emoji")} title="Biểu tượng cảm xúc" onClick={() => setPanel((p) => (p === "emoji" ? undefined : "emoji"))}>
-          <SmileIcon />
-        </Button>
-        <Button variant="outline" size="icon" className={toggle(panel === "sticker")} title="Sticker" onClick={() => setPanel((p) => (p === "sticker" ? undefined : "sticker"))}>
-          <StickerIcon />
-        </Button>
-        <Button variant="outline" size="icon" className={toggle(cards)} title="Gửi danh thiếp" onClick={() => setCards(true)}>
-          <ContactIcon />
-        </Button>
-        <Button variant="outline" size="icon" className={toggle(formatting)} title="Định dạng tin nhắn (Ctrl + Shift + X)" onClick={() => setFormatting(!formatting)}>
-          <TypeIcon />
-        </Button>
+        {/* the user's layout: tools on the bar, the rest grouped under "Thêm", hidden ones nowhere */}
+        {barTools.map((t) => (
+          <Button key={t.id} variant="outline" size="icon" className={toggle(!!tools[t.id].on)} title={tools[t.id].title ?? t.label} onClick={tools[t.id].run}>
+            <t.icon />
+          </Button>
+        ))}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className={toggle(!!creating)} title="Thêm">
+            <Button variant="outline" size="icon" className={toggle(menuTools.some((t) => tools[t.id].on))} title="Thêm">
               <PlusIcon />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {groupId && (
-              <>
-                <DropdownMenuItem onSelect={() => setCreating("poll")}>
-                  <ListChecksIcon /> Tạo bình chọn
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setCreating("note")}>
-                  <StickyNoteIcon /> Tạo ghi chú
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuItem onSelect={() => setCreating("reminder")}>
-              <AlarmClockIcon /> Tạo nhắc hẹn
+          <DropdownMenuContent align="start" className="w-56">
+            {menuTools.map((t) => (
+              <DropdownMenuItem key={t.id} onSelect={tools[t.id].run}>
+                <t.icon /> {t.label}
+              </DropdownMenuItem>
+            ))}
+            {menuTools.length > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuItem onSelect={() => setCustomizing(true)}>
+              <Settings2Icon /> Tùy chỉnh thanh công cụ
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

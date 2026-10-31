@@ -399,3 +399,38 @@ CREATE TABLE IF NOT EXISTS enclave_keyring (accountId TEXT NOT NULL REFERENCES a
 CREATE TABLE IF NOT EXISTS trust_identity (accountId TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE, uid TEXT NOT NULL, pubKey TEXT, privKey TEXT, primaryKey TEXT, verified TEXT, status TEXT, PRIMARY KEY (accountId, uid));
 CREATE TABLE IF NOT EXISTS link_history (accountId TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE, masterId TEXT NOT NULL, uid TEXT, companionId INTEGER, linkingSecret TEXT, identity TEXT, primaryIdentity TEXT, linkId TEXT, linkingTimestamp INTEGER, PRIMARY KEY (accountId, masterId));
 CREATE TABLE IF NOT EXISTS device_list (accountId TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE, uid TEXT NOT NULL, devices TEXT, PRIMARY KEY (accountId, uid));
+
+-- ===== Nexora only: "Gửi hàng loạt" (not a Zalo entity) =====
+
+-- message templates with {{variables}}, shared by every account
+CREATE TABLE IF NOT EXISTS bulk_template (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  body TEXT NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+
+-- one run of a text over picked friends of one account
+CREATE TABLE IF NOT EXISTS bulk_send (
+  id INTEGER PRIMARY KEY,
+  accountId TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('running', 'paused', 'done', 'cancelled')),
+  pauseReason TEXT,
+  createdAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bulk_send_account ON bulk_send (accountId, createdAt);
+
+-- text: filled in for this person when the run was created. 'sending' is set before the Zalo call, so one found
+-- after a restart may or may not have gone out: it becomes 'unknown' and is never sent again
+CREATE TABLE IF NOT EXISTS bulk_send_recipient (
+  sendId INTEGER NOT NULL REFERENCES bulk_send(id) ON DELETE CASCADE,
+  userId TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'sending', 'sent', 'failed', 'unknown', 'skipped')),
+  error TEXT,
+  msgId TEXT,
+  sentAt INTEGER,
+  PRIMARY KEY (sendId, userId)
+);

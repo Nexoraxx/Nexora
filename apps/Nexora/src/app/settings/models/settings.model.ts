@@ -1,1 +1,1 @@
-export type Page = "privacy" | "messages" | "blocked" | "quick" | "auto";
+export type Page = "privacy" | "messages" | "toolbars" | "blocked" | "quick" | "auto";

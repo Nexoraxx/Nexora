@@ -13,6 +13,8 @@ export function PickFriends({
   taken = [],
   initial,
   children,
+  selectAll,
+  skipBlocked,
   onConfirm,
   onClose,
 }: {
@@ -23,6 +25,9 @@ export function PickFriends({
   taken?: string[];
   initial?: string[];
   children?: ReactNode;
+  selectAll?: boolean;
+  // friends this account blocked are left out
+  skipBlocked?: boolean;
   onConfirm: (userIds: string[]) => Promise<unknown>;
   onClose: () => void;
 }) {
@@ -33,9 +38,9 @@ export function PickFriends({
       .then((list) => setFriends(list.sort((a, b) => collator.compare(a.alias || a.displayName, b.alias || b.displayName))))
       .catch((e) => setError(e.message));
   }, []);
-  const items = friends.map((f) => ({ id: f.userId, name: f.alias || f.displayName, avatar: f.avatar, search: `${f.alias ?? ""} ${f.displayName} ${f.phoneNumber ?? ""}` }));
+  const items = friends.filter((f) => !(skipBlocked && f.isBlocked)).map((f) => ({ id: f.userId, name: f.alias || f.displayName, avatar: f.avatar, search: `${f.alias ?? ""} ${f.displayName} ${f.phoneNumber ?? ""}` }));
   return (
-    <PickList title={title} placeholder="Nhập tên, số điện thoại" confirm={confirm} min={min} items={items} taken={taken} initial={initial} error={error} onConfirm={onConfirm} onClose={onClose}>
+    <PickList title={title} placeholder="Nhập tên, số điện thoại" confirm={confirm} min={min} items={items} taken={taken} initial={initial} error={error} selectAll={selectAll} onConfirm={onConfirm} onClose={onClose}>
       {children}
     </PickList>
   );

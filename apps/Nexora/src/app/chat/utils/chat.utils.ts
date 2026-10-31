@@ -1,5 +1,5 @@
-import type { ConversationSettings } from "@/shared/types";
-import { GROUP_NOTI, E2EE } from "@/app/chat/constants/chat.constants";
+import type { ConversationSettings, Thread } from "@/shared/types";
+import { GROUP_NOTI, E2EE, NO_SETTINGS } from "@/app/chat/constants/chat.constants";
 
 // chat.recommended bubbles that are neither a link nor a contact card
 const RECOMMENDED: Record<string, string> = {
@@ -68,6 +68,10 @@ export const time = (ms: number) => {
 };
 
 export const labelOf = (settings: ConversationSettings, threadId: string) => settings.labels.find((l) => l.conversations.includes(threadId));
+
+// the account bar's badge: conversations with unread messages or a mark, muted and hidden ones aside as they don't notify
+export const unreadCount = (threads: Thread[] = [], s: ConversationSettings = NO_SETTINGS) =>
+  threads.filter((t) => (t.unread > 0 || s.unread.includes(t.threadId)) && !(t.threadId in s.muted) && !s.hidden.includes(t.threadId)).length;
 
 // attachment content of photo / file / link messages
 type Attach = { title?: string; description?: string; href?: string; thumb?: string; params?: string; action?: string; id?: number; catId?: number };

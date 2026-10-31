@@ -1,6 +1,6 @@
 import { inject, injectable } from 'inversify'
 import { HTTPException } from 'hono/http-exception'
-import { FriendEventType, ReportReason, ThreadType, type API, type FriendEvent, type GroupInfoResponse } from '@hwqnq/zca-js'
+import { FriendEventType, ReportReason, ThreadType, ZaloApiError, type API, type FriendEvent, type GroupInfoResponse } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { zaloGet } from '../../../../third-party/zalo/post'
@@ -19,6 +19,8 @@ const RECEIVED_REQUEST = 2
 const collator = new Intl.Collator('vi')
 // Zalo PC keeps friend/onlines this long (list_friend_online_time)
 const ONLINE_TTL = 60_000
+// Zalo answers requested/list with error 112 when this account has sent no friend request
+const NO_SENT_REQUESTS = 112
 // Zalo PC fetches "Danh sách chặn" 50 at a time
 const BLOCK_PAGE = 50
 const NO_REQUEST = { friendRequestType: null, friendRequestMsg: null, friendRequestSource: null, friendRequestFetchTime: null, friendRequestRead: null }
@@ -59,7 +61,7 @@ export default class ContactService implements IContactService {
     if (!u) throw new HTTPException(404, { message: 'Không tìm thấy người dùng' })
     const isFr = u.isFr === 1
     const received = !isFr && u.friendRequestType === RECEIVED_REQUEST
-    const sent = !isFr && !received && Object.values(await api.getSentFriendRequest()).some((r) => r.userId === userId)
+    const sent = !isFr && !received && (await this.sentRequests(accountId)).some((r) => r.userId === userId)
     const mutualGroups = this.contacts.mutualGroups(accountId, extra.groupIds ?? [])
     const { friendRequestType: _, ...profile } = u
     return {
@@ -85,13 +87,16 @@ export default class ContactService implements IContactService {
 
   // Zalo PC's green dot on "Bạn bè"; none while this account hides its own status. zca's getFriendOnlines
   // JSON-parses every status (throws on a plain one) while PC reads only userId, so the reply is read here.
+  // Zalo answers some accounts with HTTP 404: PC only logs it and shows no dots, so a failure counts as nobody online,
+  // kept for the same minute so it isn't asked again on every refresh of the list.
   async onlineFriends(accountId: string): Promise<string[]> {
     if (!(await this.settings.showsOnline(accountId))) return []
     const cached = this.onlines.get(accountId)
     if (cached && Date.now() - cached.at < ONLINE_TTL) return cached.ids
     const api = this.zca.get(accountId)
-    const r = await zaloGet<{ onlines?: { userId?: string }[] }>(api, 'profile', '/api/social/friend/onlines', { imei: api.getContext().imei })
-    const ids = (r.onlines ?? []).flatMap((o) => (o?.userId ? [String(o.userId)] : []))
+    const ids = await zaloGet<{ onlines?: { userId?: string }[] }>(api, 'profile', '/api/social/friend/onlines', { imei: api.getContext().imei })
+      .then((r) => (r.onlines ?? []).flatMap((o) => (o?.userId ? [String(o.userId)] : [])))
+      .catch((e: Error) => (console.warn(`[${accountId}] friend/onlines: ${e.message}`), cached?.ids ?? []))
     this.onlines.set(accountId, { at: Date.now(), ids })
     return ids
   }
@@ -159,7 +164,12 @@ export default class ContactService implements IContactService {
   }
 
   async sentRequests(accountId: string) {
-    return Object.values(await this.zca.get(accountId).getSentFriendRequest())
+    try {
+      return Object.values(await this.zca.get(accountId).getSentFriendRequest())
+    } catch (e) {
+      if (e instanceof ZaloApiError && e.code === NO_SENT_REQUESTS) return []
+      throw e
+    }
   }
 
   async findUser(accountId: string, { phone, username }: FindUserRequest) {

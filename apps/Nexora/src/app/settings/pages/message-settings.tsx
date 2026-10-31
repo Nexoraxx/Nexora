@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { api } from "@/core/http/api";
+import type { AutoReplies } from "@/shared/types";
 import type { Page } from "@/app/settings/models/settings.model";
 import { useSettings } from "@/app/settings/hooks/useSettings";
 import { MUTED } from "@/app/settings/constants/settings.constants";
@@ -9,6 +12,13 @@ import { Checkbox } from "@/shared/components/ui/checkbox";
 // Zalo PC "Tin nhắn": "Tin nhắn nhanh" (with its on/off switch) and "Trả lời tự động"
 export function Messages({ accountId, onPage }: { accountId: string; onPage: (p: Page) => void }) {
   const { settings: s, error, set } = useSettings(accountId);
+  // "Trả lời tự động" is a zBusiness feature: shown only when the account's package includes it
+  const [autoReply, setAutoReply] = useState(false);
+  useEffect(() => {
+    api<AutoReplies>(`/accounts/${accountId}/auto-replies`)
+      .then((r) => setAutoReply(r.enabled))
+      .catch(() => setAutoReply(false));
+  }, [accountId]);
   if (!s) return <p className={MUTED}>{error ?? "Đang tải dữ liệu"}</p>;
   const quickOn = !!s.quick_message_status;
   return (
@@ -24,11 +34,13 @@ export function Messages({ accountId, onPage }: { accountId: string; onPage: (p:
           </Row>
         )}
       </Section>
-      <Section title="Trả lời tự động">
-        <Row label="Trả lời tự động" desc="Thiết lập tin trả lời tự động để thông báo cho người khác khi bạn không thể phản hồi" onClick={() => onPage("auto")}>
-          <ChevronRightIcon className="size-4 text-muted-foreground" />
-        </Row>
-      </Section>
+      {autoReply && (
+        <Section title="Trả lời tự động">
+          <Row label="Trả lời tự động" desc="Thiết lập tin trả lời tự động để thông báo cho người khác khi bạn không thể phản hồi" onClick={() => onPage("auto")}>
+            <ChevronRightIcon className="size-4 text-muted-foreground" />
+          </Row>
+        </Section>
+      )}
     </>
   );
 }

@@ -15,6 +15,8 @@ export type ZcaEvents = {
   friend_event: [accountId: string, event: FriendEvent]
   group_event: [accountId: string, event: GroupEvent]
   attached: [accountId: string, api: API]
+  // the socket closed for good without being kicked: the account should log in again
+  dropped: [accountId: string]
   // websocket got its cipher key: offline queues can be requested
   ready: [accountId: string]
   voip: [accountId: string, control: VoipControl]

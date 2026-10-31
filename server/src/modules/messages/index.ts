@@ -20,8 +20,13 @@ import {
   ThreadsRequest,
   UndoManyRequest,
 } from './dtos/requests/message.request'
+import { parseE2eeKey, stripE2eeParams, decryptE2eeMedia } from '../../third-party/signal/e2ee-content'
 
 const list = <T>(v: T | T[] | undefined) => (v === undefined ? [] : Array.isArray(v) ? v : [v])
+
+// content-type for a decrypted E2EE blob, from the href path extension (the CDN's type is for the encrypted bytes)
+const MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', m4a: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', amr: 'audio/amr' }
+const mimeOf = (url: string) => MIME[(stripE2eeParams(url).split('?')[0].match(/\.([a-z0-9]+)$/i)?.[1] ?? '').toLowerCase()] ?? 'application/octet-stream'
 
 // Mounted under /accounts/:accountId. Live updates go out on /events: message, undo, reaction, receipt, typing, threads.
 export const messageRoutes = (messages: IMessageService) =>
@@ -44,11 +49,21 @@ export const messageRoutes = (messages: IMessageService) =>
       const body = SendMessageRequest.parse(await c.req.json())
       return c.json(await messages.sendText(c.req.param('accountId')!, c.req.param('threadId'), body))
     })
-    // the bytes of a message photo for the clipboard: the webview can't read Zalo's CDN across origins
+    // the bytes of a message photo (clipboard, and the only way to show E2EE media): the webview can't read Zalo's CDN
+    // across origins, and an E2EE blob must be AES-decrypted with the key in its href's e2esession= param
     .get('/image', async (c) => {
-      const res = await fetch(ImageRequest.parse(c.req.query()).url)
+      const url = ImageRequest.parse(c.req.query()).url
+      const key = parseE2eeKey(url)
+      const res = await fetch(key ? stripE2eeParams(url) : url)
       if (!res.ok) return c.json({ error: 'Không tải được ảnh' }, 502)
-      return c.body(await res.arrayBuffer(), 200, { 'content-type': res.headers.get('content-type') ?? 'image/jpeg' })
+      const buf = Buffer.from(await res.arrayBuffer())
+      try {
+        const body = key ? decryptE2eeMedia(buf, key) : buf
+        return c.body(new Uint8Array(body), 200, { 'content-type': key ? mimeOf(url) : (res.headers.get('content-type') ?? 'image/jpeg') })
+      } catch (e) {
+        console.error('[e2ee] media decrypt', e)
+        return c.json({ error: 'Không giải mã được tệp mã hóa đầu cuối' }, 502)
+      }
     })
     // the bytes of a pasted file path (PC's _uploadFileFromPaths); then sent like a picked file
     .get('/local-file', async (c) => {

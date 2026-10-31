@@ -6,6 +6,7 @@ import { CreateTodoRequest, TodoStatusRequest } from './dtos/requests/todo.reque
 export const todoRoutes = (todos: ITodoService) =>
   new Hono()
     .get('/todos', async (c) => c.json(await todos.list(c.req.param('accountId')!)))
+    .get('/todos/enabled', (c) => c.json({ enabled: todos.isEnabled(c.req.param('accountId')!) }))
     .post('/todos', async (c) => c.json(await todos.create(c.req.param('accountId')!, CreateTodoRequest.parse(await c.req.json()))))
     .put('/todos/:id/status', async (c) => {
       await todos.setStatus(c.req.param('accountId')!, c.req.param('id'), TodoStatusRequest.parse(await c.req.json()).status)

@@ -1,0 +1,29 @@
+# Tests on every push and pull request: server (bun test), app (tests, typecheck + build)
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Server
+        working-directory: server
+        run: |
+          bun install --frozen-lockfile
+          bun test
+
+      - name: App
+        working-directory: apps/Nexora
+        run: |
+          bun install --frozen-lockfile
+          bun test tests
+          bun run build

@@ -11,6 +11,10 @@ import BoardRepository from '../modules/boards/repositories/implements/board-rep
 import type IBoardRepository from '../modules/boards/repositories/interfaces/board-repository'
 import BoardService from '../modules/boards/services/implements/board-service'
 import type IBoardService from '../modules/boards/services/interfaces/board-service'
+import BulkSendRepository from '../modules/bulk-sends/repositories/implements/bulk-send-repository'
+import type IBulkSendRepository from '../modules/bulk-sends/repositories/interfaces/bulk-send-repository'
+import BulkSendService from '../modules/bulk-sends/services/implements/bulk-send-service'
+import type IBulkSendService from '../modules/bulk-sends/services/interfaces/bulk-send-service'
 import ContactRepository from '../modules/contacts/repositories/implements/contact-repository'
 import type IContactRepository from '../modules/contacts/repositories/interfaces/contact-repository'
 import ContactService from '../modules/contacts/services/implements/contact-service'
@@ -58,6 +62,7 @@ export function createContainer(database: Database = openDatabase(config.dbPath)
   container.bind(E2eeService).toSelf()
   container.bind<IAccountRepository>(TOKENS.AccountRepository).to(AccountRepository)
   container.bind<IBoardRepository>(TOKENS.BoardRepository).to(BoardRepository)
+  container.bind<IBulkSendRepository>(TOKENS.BulkSendRepository).to(BulkSendRepository)
   container.bind<IContactRepository>(TOKENS.ContactRepository).to(ContactRepository)
   container.bind<IConversationRepository>(TOKENS.ConversationRepository).to(ConversationRepository)
   container.bind<IGroupRepository>(TOKENS.GroupRepository).to(GroupRepository)
@@ -79,5 +84,6 @@ export function createContainer(database: Database = openDatabase(config.dbPath)
   container.bind<ISearchService>(TOKENS.SearchService).to(SearchService)
   container.bind<IGroupService>(TOKENS.GroupService).to(GroupService)
   container.bind<IBoardService>(TOKENS.BoardService).to(BoardService)
+  container.bind<IBulkSendService>(TOKENS.BulkSendService).to(BulkSendService)
   return container
 }

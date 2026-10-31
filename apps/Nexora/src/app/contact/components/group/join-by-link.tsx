@@ -19,7 +19,7 @@ export function JoinByLink({ accountId, onChat }: { accountId: string; onChat: (
       .catch((e) => setError(e.message));
 
   return (
-    <div className="border-b py-2">
+    <div className="flex flex-col gap-2">
       <form
         className="flex items-center gap-1.5"
         onSubmit={(e) => {

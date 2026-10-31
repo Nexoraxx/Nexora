@@ -90,6 +90,10 @@ export default class TodoService implements ITodoService {
     zca.on('old_messages', changed)
   }
 
+  isEnabled(accountId: string) {
+    return enabled(this.zca.get(accountId))
+  }
+
   // PC's lists keep todos this account created, is assigned or watches. Its status: its own assignee entry's, where
   // "Chưa nhận" counts as "Đã nhận" for its own creator; otherwise the todo's.
   async list(accountId: string): Promise<{ enabled: boolean; todos: Todo[] }> {

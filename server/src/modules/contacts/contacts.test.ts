@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
-import { FriendEventType } from '@hwqnq/zca-js'
+import { FriendEventType, ZaloApiError } from '@hwqnq/zca-js'
 import { openDatabase } from '../../dbs/sqlite'
 import type { ZcaService } from '../../third-party/zalo/zalo-client'
 import SettingsService from '../settings/services/implements/settings-service'
@@ -199,6 +199,23 @@ test('last online: friends only, both sides showing their status; online friends
   const hidden = new ContactService(new ContactRepository(db), zca, new SettingsService(zca))
   expect(await hidden.onlineFriends('me')).toEqual([])
   expect(await hidden.lastOnline('me', 'a')).toBeNull()
+})
+
+test('Zalo failing friend/onlines means nobody online, asked again a minute later; error 112 means no sent request', async () => {
+  const nexoraGet = mock(async (): Promise<unknown> => Promise.reject(new ZaloApiError('Request failed with status code 404')))
+  const getSentFriendRequest = mock(async (): Promise<unknown> => Promise.reject(new ZaloApiError('Lỗi không xác định', 112)))
+  const api = { zpwServiceMap: { profile: ['https://profile'] }, getContext: () => ({ imei: 'imei' }), getSettings: async () => ({ show_online_status: true }), nexoraGet, getSentFriendRequest }
+  const zca = Object.assign(new EventEmitter(), { get: () => api }) as unknown as ZcaService
+  const contacts = new ContactService(new ContactRepository(openDatabase(':memory:')), zca, new SettingsService(zca))
+
+  expect(await contacts.onlineFriends('me')).toEqual([])
+  expect(await contacts.onlineFriends('me')).toEqual([])
+  expect(nexoraGet).toHaveBeenCalledTimes(1)
+
+  expect(await contacts.sentRequests('me')).toEqual([])
+  // any other error still surfaces
+  getSentFriendRequest.mockImplementationOnce(async () => Promise.reject(new ZaloApiError('Lỗi', 500)))
+  await expect(contacts.sentRequests('me')).rejects.toThrow('Lỗi')
 })
 
 test('seen friend requests: unseen received ones only; Zalo told only when contactTabV2.seen_friendrequest is on', async () => {

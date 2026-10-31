@@ -6,8 +6,10 @@ import { toBase64, fromBase64 } from './crypto'
 export const PC_DEVICE = 2
 
 // e2ee_metadata row: a conversation's E2EE state and the peer's devices learnt from its bundle (regId = its iKey.id);
-// devices null = never fetched
-export type E2eeMeta = { status: number; devices: { deviceId: number; regId: number }[] | null }
+// devices null = never fetched. stale (PC's markStale): the session is set up again before its next use, kept until
+// then for messages still in flight
+export type E2eeDevice = { deviceId: number; regId: number; stale?: boolean }
+export type E2eeMeta = { status: number; devices: E2eeDevice[] | null }
 export const E2EE_ON = 1
 
 const serialize = (kp: KeyPair) => JSON.stringify({ pubKey: toBase64(kp.pubKey), privKey: toBase64(kp.privKey) })
@@ -129,10 +131,6 @@ export class SignalSqliteStore {
     )
   }
 
-  removeSession(identifier: string) {
-    this.db.run(`DELETE FROM e2ee_session WHERE accountId = ? AND identifier = ?`, [this.accountId, identifier])
-  }
-
   meta(uid: string): E2eeMeta {
     const row = this.db.query<{ status: number | null; devices: string | null }, [string, string]>(`SELECT status, devices FROM e2ee_metadata WHERE accountId = ? AND uid = ?`).get(this.accountId, uid)
     return { status: row?.status ?? 0, devices: row?.devices ? JSON.parse(row.devices) : null }
@@ -145,6 +143,12 @@ export class SignalSqliteStore {
        ON CONFLICT (accountId, uid) DO UPDATE SET status = excluded.status, devices = excluded.devices`,
       [this.accountId, uid, next.status, next.devices && JSON.stringify(next.devices)],
     )
+  }
+
+  // a new bundle of ours (submitted with delSS): every device dropped its session with us, so each is set up again
+  markAllStale() {
+    const rows = this.db.query<{ uid: string; devices: string }, [string]>(`SELECT uid, devices FROM e2ee_metadata WHERE accountId = ? AND devices IS NOT NULL`).all(this.accountId)
+    for (const r of rows) this.setMeta(r.uid, { devices: (JSON.parse(r.devices) as E2eeDevice[]).map((d) => ({ ...d, stale: true })) })
   }
 
   // conversations Zalo lists as end-to-end encrypted (GET_LIST_USER_E2EE); every other one is off

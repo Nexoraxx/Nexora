@@ -1,6 +1,6 @@
 import { inject, injectable } from 'inversify'
 import { HTTPException } from 'hono/http-exception'
-import { LoginQRCallbackEventType, ZaloApiLoginQRAborted, type API, type User } from '@hwqnq/zca-js'
+import { LoginQRCallbackEventType, ZaloApiError, ZaloApiLoginQRAborted, type API, type User } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import type { ChangeAvatarRequest, UpdateProfileRequest } from '../../dtos/requests/account.request'
@@ -12,6 +12,11 @@ import type IAccountService from '../interfaces/account-service'
 
 // business accounts' fields as me-v2 returns them; Zalo PC sends them back on every profile update
 type BizInfo = { biz?: { desc?: string; cate?: number; addr?: string; website?: string; email?: string } }
+
+export const retryDelay = (attempt: number) => Math.min(2000 * 2 ** (attempt - 1), 60_000)
+// zca's login says "Đăng nhập thất bại" when Zalo turns the cookie down; a network failure surfaces as fetch's own
+// error, and Zalo answering with an HTTP error as "Failed to fetch …": those pass
+export const lostSession = (e: unknown) => e instanceof ZaloApiError && !e.message.startsWith('Failed to fetch')
 
 const toProfile = (p: User): Profile => ({
   userId: p.userId,
@@ -30,12 +35,19 @@ const toProfile = (p: User): Profile => ({
 export default class AccountService implements IAccountService {
   private status = new Map<string, AccountStatus>()
   private abortQR?: () => unknown
+  // reconnects waiting to run, with how many tried in a row
+  private retries = new Map<string, { attempt: number; timer: ReturnType<typeof setTimeout> }>()
+  // logins in flight: a manual "Kết nối lại" and a scheduled retry must not both attach
+  private logging = new Set<string>()
 
   constructor(
     @inject(TOKENS.AccountRepository) private accounts: IAccountRepository,
     @inject(ZcaService) private zca: ZcaService,
   ) {
     zca.on('status', (id, status) => this.setStatus(id, status))
+    zca.on('dropped', (id) => this.reconnectLater(id))
+    // the socket is up again: the next drop starts over from the shortest wait
+    zca.on('ready', (id) => this.cancelRetry(id))
   }
 
   list(): Account[] {
@@ -87,12 +99,14 @@ export default class AccountService implements IAccountService {
   setState(id: string, state: AccountState) {
     const row = this.accounts.setState(id, state)
     if (!row) return false
+    this.cancelRetry(id)
     if (state !== 'active') this.zca.detach(id)
     else if (!this.zca.has(id)) void this.connect(row)
     return true
   }
 
   async remove(id: string) {
+    this.cancelRetry(id)
     if (this.zca.has(id)) {
       const api = this.zca.get(id)
       // PC deactivates its heartbeat on logout ({status: 0, imei}, as its deactiveV2)
@@ -152,17 +166,43 @@ export default class AccountService implements IAccountService {
   }
 
   private async connect(row: AccountRow) {
+    if (this.logging.has(row.id)) return
+    this.logging.add(row.id)
     this.setStatus(row.id, 'connecting')
     try {
       const api = await this.zca.login({ imei: row.imei, cookie: JSON.parse(row.cookie), userAgent: row.userAgent, language: row.language ?? undefined })
       // removed or paused while logging in: don't resurrect it
       if (!this.accounts.isActive(row.id)) return this.setStatus(row.id, 'offline')
       await this.save(api)
+      // attaching pulls what was missed meanwhile: getLastMessages, then the offline queues once the socket is up
       this.zca.attach(row.id, api)
     } catch (e) {
       console.error(`[${row.id}] login failed`, e)
-      this.setStatus(row.id, 'offline')
+      // Zalo refusing the saved session needs a new QR login; anything else (no network yet at start or after a
+      // suspend, Zalo unreachable) is tried again
+      if (lostSession(e) || !this.accounts.isActive(row.id)) return this.setStatus(row.id, 'offline')
+      this.reconnectLater(row.id)
+    } finally {
+      this.logging.delete(row.id)
     }
+  }
+
+  // Zalo PC's socket retries: wait 2s, doubling up to a minute, and keep trying for as long as it takes
+  private reconnectLater(id: string) {
+    const attempt = (this.retries.get(id)?.attempt ?? 0) + 1
+    clearTimeout(this.retries.get(id)?.timer)
+    this.setStatus(id, 'connecting')
+    const timer = setTimeout(() => {
+      // read at fire time: the cookie may have been refreshed, the account paused or removed
+      const row = this.accounts.active().find((r) => r.id === id)
+      if (row && !this.zca.has(id)) void this.connect(row)
+    }, retryDelay(attempt))
+    this.retries.set(id, { attempt, timer })
+  }
+
+  private cancelRetry(id: string) {
+    clearTimeout(this.retries.get(id)?.timer)
+    this.retries.delete(id)
   }
 
   // Login refreshes cookies in the jar, so credentials are re-saved after every login to keep the session rolling.

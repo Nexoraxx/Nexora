@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ToolbarDialog } from "@/app/chat/components/toolbar/toolbar-editor";
+import { MESSAGE_BAR, MESSAGE_TOOLS } from "@/app/chat/constants/toolbar.constants";
+import { arrange, useLayout } from "@/shared/hooks/use-toolbar";
 import { api, apiBlob } from "@/core/http/api";
 import { onEvent } from "@/core/websocket/events";
 import type { ChatTarget, ConversationSettings, GroupDetails, MessageRow, MyCloud, Pin, Pins, Thread } from "@/shared/types";
@@ -20,7 +23,8 @@ import { SelectionBar } from "@/app/chat/components/conversation/selection-bar";
 import { Composer } from "@/app/chat/components/input/composer";
 import { ForwardDialog } from "@/app/chat/components/dialogs/forward-dialog";
 import { ReplacePinDialog } from "@/app/chat/components/dialogs/replace-pin-dialog";
-import { ClockIcon, EllipsisIcon, LockIcon, PanelRightIcon, SearchIcon, StarIcon } from "lucide-react";
+import { ClockIcon, EllipsisIcon, LockIcon, PanelRightIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
+import { ErrorBanner } from "@/shared/components/error-banner";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
@@ -84,6 +88,8 @@ export function Conversation({
   settings,
   info,
   cloud,
+  tag,
+  todo,
   onInfo,
   onOpen,
   onProfile,
@@ -95,6 +101,10 @@ export function Conversation({
   settings: ConversationSettings;
   info: boolean;
   cloud?: MyCloud;
+  // "Tất cả": the account this conversation is chatted from
+  tag?: ReactNode;
+  // Zalo has To-Do on for this account: offers "Giao việc"
+  todo: boolean;
   onInfo: (open: boolean) => void;
   onOpen: (t?: ChatTarget) => void;
   onProfile: (userId: string) => void;
@@ -126,6 +136,9 @@ export function Conversation({
   // and the bar re-centers and its highlight layers re-measure a frame late, so it jumps
   const [popups, setPopups] = useState<HTMLDivElement | null>(null);
   const top = useRef<HTMLDivElement>(null);
+  // the hover bar's tools as this device arranged them, and "Tùy chỉnh thanh công cụ"
+  const messageTools = arrange(MESSAGE_TOOLS, useLayout(MESSAGE_BAR));
+  const [customizing, setCustomizing] = useState(false);
   const base = `/accounts/${accountId}/threads/${target.threadId}`;
   // "Cloud của tôi": no recall, no presence; other conversations can save messages into it
   const isCloud = !!cloud?.threadId && cloud.threadId === target.threadId;
@@ -290,6 +303,19 @@ export function Conversation({
               const first = !prev || prev.fromUid !== m.fromUid || infoText(prev) !== null;
               // tagged by name or by @All
               const mentioned = !mine && m.mentions?.some((x) => x.uid === accountId || x.uid === MENTION_ALL);
+              const react = (icon: string) => run(api(`${base}/messages/${m.msgId}/reactions`, "POST", { icon }));
+              const photo = PHOTOS.has(m.msgType) ? attach(m.content).href : undefined;
+              // what each customizable tool does on this message, and whether it applies to it
+              const acts: Record<string, { show: boolean; run?: () => void; label?: string }> = {
+                react: { show: true },
+                reply: { show: m.fromUid !== null, run: () => setQuote(m) },
+                forward: { show: canForward(m), run: () => setForwarding(m) },
+                copy: photo ? { show: true, run: () => copyImage(photo), label: "Copy hình ảnh" } : { show: true, run: () => copy(copyText(m)) },
+                pin: { show: m.fromUid !== null, run: () => (pins.limit && pins.pins.length >= pins.limit ? setReplacing(m) : pin(m)) },
+                star: { show: true, run: () => star(m), label: m.starred ? "Bỏ đánh dấu tin nhắn" : "Đánh dấu tin nhắn" },
+              };
+              const onBar = messageTools.filter((t) => t.place === "bar" && acts[t.id]?.show);
+              const inMenu = messageTools.filter((t) => t.place === "menu" && acts[t.id]?.show);
               return (
                 <div
                   key={m.msgId}
@@ -339,26 +365,34 @@ export function Conversation({
                       {/* stays shown while its menu is open: the open menu takes the hover away (pointer-events none on
                           the body), and a hidden trigger would send the menu to the top-left corner */}
                       {m.msgType !== "chat.undo" && online && !selected && (
-                        <div className={cn("absolute -top-7.5 z-1 hidden gap-0.5 rounded-lg border bg-white p-0.5 whitespace-nowrap group-hover/bubble:flex has-data-[state=open]:flex", mine ? "right-0" : "left-0")}>
-                          {PICKER.map((icon) => (
-                            <Button key={icon} variant="ghost" size="icon-xs" title="Thả cảm xúc" onClick={() => run(api(`${base}/messages/${m.msgId}/reactions`, "POST", { icon }))}>
-                              {REACTIONS[icon]}
-                            </Button>
-                          ))}
-                          {m.reactions.some((r) => r.mine) && (
-                            <Button variant="ghost" size="xs" onClick={() => run(api(`${base}/messages/${m.msgId}/reactions`, "POST", { icon: "" }))}>
-                              Gỡ
-                            </Button>
+                        <div
+                          className={cn(
+                            "absolute -top-7.5 z-1 hidden items-center gap-0.5 rounded-lg border bg-white p-0.5 whitespace-nowrap shadow-sm group-hover/bubble:flex has-data-[state=open]:flex",
+                            mine ? "right-0" : "left-0",
                           )}
-                          {m.fromUid !== null && (
-                            <Button variant="ghost" size="xs" onClick={() => setQuote(m)}>
-                              Trả lời
-                            </Button>
-                          )}
-                          {canForward(m) && (
-                            <Button variant="ghost" size="xs" onClick={() => setForwarding(m)}>
-                              Chia sẻ
-                            </Button>
+                        >
+                          {/* the user's layout (MESSAGE_TOOLS): "react" stands for the quick reactions */}
+                          {onBar.map((t, k) =>
+                            t.id === "react" ? (
+                              <Fragment key="react">
+                                {k > 0 && <span className="mx-0.5 h-4 border-l" />}
+                                {PICKER.map((icon) => (
+                                  <Button key={icon} variant="ghost" size="icon-xs" title="Thả cảm xúc" onClick={() => react(icon)}>
+                                    {REACTIONS[icon]}
+                                  </Button>
+                                ))}
+                                {m.reactions.some((r) => r.mine) && (
+                                  <Button variant="ghost" size="icon-xs" title="Gỡ cảm xúc" onClick={() => react("")}>
+                                    <XIcon />
+                                  </Button>
+                                )}
+                                {k < onBar.length - 1 && <span className="mx-0.5 h-4 border-l" />}
+                              </Fragment>
+                            ) : (
+                              <Button key={t.id} variant="ghost" size="icon-xs" title={acts[t.id].label ?? t.label} onClick={acts[t.id].run}>
+                                <t.icon />
+                              </Button>
+                            ),
                           )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -367,15 +401,28 @@ export function Conversation({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent className="w-52">
-                              {PHOTOS.has(m.msgType) && attach(m.content).href ? (
-                                <DropdownMenuItem onSelect={() => copyImage(attach(m.content).href!)}>Copy hình ảnh</DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onSelect={() => copy(copyText(m))}>Sao chép</DropdownMenuItem>
+                              {inMenu.map((t) =>
+                                t.id === "react" ? (
+                                  <div key="react" className="flex gap-0.5 p-0.5">
+                                    {PICKER.map((icon) => (
+                                      <DropdownMenuItem key={icon} className="justify-center px-1.5" title="Thả cảm xúc" onSelect={() => react(icon)}>
+                                        {REACTIONS[icon]}
+                                      </DropdownMenuItem>
+                                    ))}
+                                    {m.reactions.some((r) => r.mine) && (
+                                      <DropdownMenuItem className="px-1.5" title="Gỡ cảm xúc" onSelect={() => react("")}>
+                                        <XIcon />
+                                      </DropdownMenuItem>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <DropdownMenuItem key={t.id} onSelect={acts[t.id].run}>
+                                    {acts[t.id].label ?? t.label}
+                                  </DropdownMenuItem>
+                                ),
                               )}
-                              {m.fromUid !== null && <DropdownMenuItem onSelect={() => (pins.limit && pins.pins.length >= pins.limit ? setReplacing(m) : pin(m))}>Ghim tin nhắn</DropdownMenuItem>}
-                              <DropdownMenuItem onSelect={() => star(m)}>{m.starred ? "Bỏ đánh dấu tin nhắn" : "Đánh dấu tin nhắn"}</DropdownMenuItem>
                               <DropdownMenuItem onSelect={() => setSelected([m.msgId])}>Chọn nhiều tin nhắn</DropdownMenuItem>
-                              {m.fromUid !== null && copyText(m).trim() && <DropdownMenuItem onSelect={() => setTodoOf(m)}>Giao việc</DropdownMenuItem>}
+                              {todo && m.fromUid !== null && copyText(m).trim() && <DropdownMenuItem onSelect={() => setTodoOf(m)}>Giao việc</DropdownMenuItem>}
                               {mine && target.isGroup && <DropdownMenuItem onSelect={() => setInfoOf(m)}>Xem chi tiết</DropdownMenuItem>}
                               <DropdownMenuSeparator />
                               {cloud?.threadId && !isCloud && canForward(m) && (
@@ -398,6 +445,8 @@ export function Conversation({
                               >
                                 {isCloud ? "Xóa" : "Xóa chỉ ở phía tôi"}
                               </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onSelect={() => setCustomizing(true)}>Tùy chỉnh thanh công cụ</DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -429,6 +478,7 @@ export function Conversation({
             <div className="min-w-0 flex-1">
               <div className="truncate text-base font-semibold flex items-center gap-1.5">
                 <span>{name}</span>
+                {tag}
                 {live?.e2ee && (
                   <span className="inline-flex items-center gap-1 text-[11px] font-normal text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5" title="Đã mã hóa đầu cuối">
                     <LockIcon className="size-3" /> Mã hóa đầu cuối
@@ -461,11 +511,9 @@ export function Conversation({
           <PinBar pins={pins.pins} onJump={jump} onUnpin={(p) => run(api(`${base}/pins`, "DELETE", { topicId: p.topicId, topicType: p.topicType }).then(loadPins))} />
         </GlassBar>
         {error && (
-          <div
-            className="absolute top-[calc(var(--header-h)+20px)] right-6 left-6 z-3 cursor-pointer rounded-lg bg-red-50 px-4 py-2 text-red-700"
-            onClick={() => setError(undefined)}
-          >
-            {error}
+          // solid under the tint: the messages scroll beneath it
+          <div className="absolute top-[calc(var(--header-h)+20px)] right-6 left-6 z-3 overflow-hidden rounded-lg bg-background shadow-sm">
+            <ErrorBanner text={error} onClose={() => setError(undefined)} />
           </div>
         )}
         {toast && (
@@ -486,18 +534,21 @@ export function Conversation({
               onError={setError}
             />
           ) : (
-            <Composer
-              popups={popups}
-              base={base}
-              accountId={accountId}
-              groupId={target.isGroup ? target.threadId : undefined}
-              online={online}
-              quote={quote}
-              ttl={settings.ttl[target.threadId] ?? 0}
-              name={name}
-              onQuoteDone={() => setQuote(undefined)}
-              onError={setError}
-            />
+            <>
+              {tag && <div className="flex items-center gap-1.5 px-4 pt-2 text-xs text-muted-foreground">Gửi bằng {tag}</div>}
+              <Composer
+                popups={popups}
+                base={base}
+                accountId={accountId}
+                groupId={target.isGroup ? target.threadId : undefined}
+                online={online}
+                quote={quote}
+                ttl={settings.ttl[target.threadId] ?? 0}
+                name={name}
+                onQuoteDone={() => setQuote(undefined)}
+                onError={setError}
+              />
+            </>
           )}
         </GlassBar>
         {todoOf && <TodoEditor accountId={accountId} target={target} message={{ msgId: todoOf.msgId, text: copyText(todoOf) }} onClose={() => setTodoOf(undefined)} />}
@@ -505,6 +556,7 @@ export function Conversation({
         {infoOf && <MessageInfoDialog base={base} message={infoOf} onClose={() => setInfoOf(undefined)} />}
         {pollOf && <PollView base={`/accounts/${accountId}/groups/${target.threadId}`} threadId={target.threadId} pollId={pollOf} onClose={() => setPollOf(undefined)} />}
         {replacing && <ReplacePinDialog pins={pins.pins} onConfirm={(old) => pin(replacing, old)} onClose={() => setReplacing(undefined)} />}
+        {customizing && <ToolbarDialog onClose={() => setCustomizing(false)} />}
       </section>
       {searching ? (
         <SearchPanel accountId={accountId} target={target} onJump={jump} onClose={() => setSearching(false)} />

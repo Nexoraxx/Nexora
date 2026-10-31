@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+// as text, so `bun build --compile` embeds it: the release server is one file with no source tree beside it
+import code from './libsignal-protocol.static.js' with { type: 'text' }
 
 export interface KeyPair {
   pubKey: ArrayBuffer
@@ -27,8 +27,6 @@ export function getLibSignal() {
   win.window = globalThis
   win.libsignal = win.libsignal || {}
 
-  const codePath = join(import.meta.dir, 'libsignal-protocol.static.js')
-  const code = readFileSync(codePath, 'utf8')
   const fn = new Function('require', code)
   fn(undefined)
 

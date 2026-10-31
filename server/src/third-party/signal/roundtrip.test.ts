@@ -6,6 +6,8 @@ import { E2eeSessionManager } from './e2ee-session-manager'
 import { E2eeMessageSender } from './e2ee-message-sender'
 import { E2eeMessageReceiver, E2EE_STATUS } from './e2ee-message-receiver'
 import { SignalServerManager, type BundleKey, type DeviceBundle, type E2eeList, type SessionEvent } from './signal-server-manager'
+import { numberToBuffer, parseE2eeKey, decryptE2eeMedia, stripE2eeParams } from './e2ee-content'
+import { createCipheriv, randomBytes } from 'node:crypto'
 
 type Call = { uid: string; cmd: number; subCmd: number; data: Record<string, any> }
 const UNKNOWN_EXCEPTION = Symbol('112')
@@ -37,7 +39,8 @@ class FakeZalo {
     this.bundles.set(uid, own)
     switch (cmd) {
       case 564:
-        return own.get(deviceId) ? { keyId: own.get(deviceId)!.preKey!.iKey.id } : { err: -1 }
+        // real Zalo returns keyId as a string, so a strict === against our numeric regId would re-register every restart
+        return own.get(deviceId) ? { keyId: String(own.get(deviceId)!.preKey!.iKey.id) } : { err: -1 }
       case 540:
         own.set(deviceId, { deviceId, preKey: d.key.preKey, opKeys: [...d.key.opKeys] })
         return { ts: 1 }
@@ -180,10 +183,13 @@ test('a text goes to every device of the peer and our other devices, each with i
   expect(await alicePhone.sessions.decrypt('alice', 2, String(params[2].message))).toBe('đậm')
 
   await alice.sender.sendText(api, 'bob', 'lần hai')
-  expect(zalo.sent(541).filter((c) => c.uid === 'alice' && c.data.uids[0].uid === 'bob')).toHaveLength(1)
+  const bundleReqs = zalo.sent(541).filter((c) => c.uid === 'alice' && c.data.uids[0].uid === 'bob')
+  expect(bundleReqs).toHaveLength(1)
+  // a send sets sessions up as PC's checkSessionThenInit: a re-init, not an upgrade
+  expect(bundleReqs[0].data).toEqual({ uids: [{ uid: 'bob', deviceId: -1 }], isReInit: 1, msgInfoNoti: 0, isAutoUpgrade: 0 })
 })
 
-test("the server's copy of our own send reads from what we sent; a message for an older bundle is not decrypted", async () => {
+test("the server's copy of our own send reads from what we sent; a message for another bundle is still tried, as PC", async () => {
   const { alice, bob } = await setup()
   const { api } = fakeApi()
   const sent = await alice.sender.sendText(api, 'bob', 'của tôi')
@@ -191,9 +197,10 @@ test("the server's copy of our own send reads from what we sent; a message for a
   expect(await alice.receiver.decrypt(incoming('other', 'alice', 'whatever'), true)).toEqual({ status: E2EE_STATUS.DUPLICATED })
 
   const { cipher } = await alice.sessions.encrypt('bob', 2, 'cũ')
-  expect(await bob.receiver.decrypt(incoming('9', 'alice', cipher, 2, { e2ee: JSON.stringify({ iid: 1 }) }), false)).toEqual({ status: E2EE_STATUS.CHANGE_DEVICE })
-  expect(await bob.receiver.decrypt(incoming('9', 'alice', cipher, 2, { e2ee: JSON.stringify({ compat_version: 1 }) }), false)).toEqual({ status: E2EE_STATUS.FAILED })
-  expect(await bob.receiver.decrypt(incoming('9', 'alice', 'not a cipher'), false)).toEqual({ status: E2EE_STATUS.FAILED })
+  expect(await bob.receiver.decrypt(incoming('9', 'alice', cipher, 2, { e2ee: JSON.stringify({ iid: 1 }) }), false)).toEqual({ status: E2EE_STATUS.OK, content: 'cũ' })
+  expect(await bob.receiver.decrypt(incoming('10', 'alice', 'not a cipher', 2, { e2ee: JSON.stringify({ iid: 1 }) }), false)).toEqual({ status: E2EE_STATUS.CHANGE_DEVICE })
+  expect(await bob.receiver.decrypt(incoming('11', 'alice', cipher, 2, { e2ee: JSON.stringify({ compat_version: 1 }) }), false)).toEqual({ status: E2EE_STATUS.FAILED })
+  expect(await bob.receiver.decrypt(incoming('12', 'alice', 'not a cipher'), false)).toEqual({ status: E2EE_STATUS.FAILED })
 })
 
 test("a reply's quoted text decrypts with the message, in PC's field order", async () => {
@@ -246,9 +253,83 @@ test('E2EE list, enable, disable and delete-key pushes keep the conversation sta
   expect(changed).toEqual(['bob:false', 'bob:true'])
 
   await alice.sessions.devices('bob')
+  const inits = zalo.sent(543).length
   await alice.sessions.onSessionEvents(548, [{ msgId: '3', sessionData: { uidFrom: 'bob', deviceId: 2, deleteType: 0 } }])
-  expect(await alice.store.loadSession('bob_2.2')).toBeUndefined()
-  expect(zalo.sent(545).map((c) => c.data.info[0].cmd)).toEqual([580, 581, 548])
+  // the session stays for messages on their way; the next send sets the device up again
+  expect(await alice.store.loadSession('bob_2.2')).toBeDefined()
+  expect(alice.store.meta('bob').devices).toEqual([{ deviceId: 2, regId: bob.store.registrationId()!, stale: true }])
+  expect(await alice.sessions.devices('bob')).toEqual([2])
+  expect(zalo.sent(543)).toHaveLength(inits + 1)
+  expect(alice.store.meta('bob').devices).toEqual([{ deviceId: 2, regId: bob.store.registrationId()! }])
+  // PC reports a delete-key push processed as DELETE_KEY (547)
+  expect(zalo.sent(545).map((c) => c.data.info[0].cmd)).toEqual([580, 581, 547])
+})
+
+test('an ACK is reported processed; a failed one marks the device stale, keeping its session, until the next send', async () => {
+  const { zalo, alice, bob } = await setup()
+  await alice.sessions.devices('bob')
+  const [init] = zalo.sent(543)
+  await bob.sessions.onSessionEvents(543, [{ msgId: '1', sessionData: { uidFrom: 'alice', uidTo: 'bob', deviceId: 2, data: init.data.data[0].data, ts: 5 } }])
+  const ack = zalo.sent(544).find((c) => c.uid === 'bob')!
+  await alice.sessions.onSessionEvents(544, [{ msgId: '2', sessionData: { uidFrom: 'bob', deviceId: 2, type: 1, data: ack.data.data[0].data } }])
+  await alice.sessions.onSessionEvents(544, [{ msgId: '3', sessionData: { uidFrom: 'bob', deviceId: 2, type: 0 } }])
+  expect(zalo.sent(545).filter((c) => c.uid === 'alice').map((c) => c.data.info[0])).toMatchObject([
+    { gid: '2', cmd: 544 },
+    { gid: '3', cmd: 544 },
+  ])
+  expect(await alice.store.loadSession('bob_2.2')).toBeDefined()
+  expect(alice.store.meta('bob').devices?.[0].stale).toBe(true)
+  await alice.sessions.devices('bob')
+  expect(zalo.sent(543).filter((c) => c.uid === 'alice')).toHaveLength(2)
+})
+
+test("an INIT from the peer's phone listing its other devices sets those up too, each asked for on its own", async () => {
+  const { zalo, alice } = await setup()
+  const stack = async (deviceId: number) => {
+    const db = openDatabase(':memory:')
+    account(db, 'bob')
+    const d = device(zalo, db, 'bob', deviceId)
+    await d.sessions.submitNewBundle()
+    return d
+  }
+  const bobPhone = await stack(0)
+  await stack(1)
+  // the phone knows bob's web (device 1) and lists it in its INIT
+  bobPhone.store.setMeta('bob', { devices: [{ deviceId: 1, regId: 0 }] })
+  await bobPhone.sessions.buildSessions('alice', { forwardSubdevice: true })
+  const fromPhone = zalo.sent(543).find((c) => c.uid === 'bob' && c.data.uidTo === 'alice')!
+
+  await alice.sessions.onSessionEvents(543, [{ msgId: '1', sessionData: { uidFrom: 'bob', uidTo: 'alice', deviceId: 0, data: fromPhone.data.data[0].data } }])
+  expect(zalo.sent(541).filter((c) => c.uid === 'alice').map((c) => c.data)).toEqual([{ uids: [{ uid: 'bob', deviceId: 1 }], isReInit: 1, msgInfoNoti: 0, isAutoUpgrade: 0 }])
+  expect(zalo.sent(543).filter((c) => c.uid === 'alice').map((c) => [c.data.uidTo, c.data.data.map((d: { deviceId: number }) => d.deviceId)])).toEqual([['bob', [1]]])
+  expect(alice.store.meta('bob').devices!.map((d) => d.deviceId).sort()).toEqual([0, 1])
+})
+
+test('a new bundle of ours sets every known device up again; the E2EE list updates a device registered again elsewhere', async () => {
+  const { zalo, alice, bob } = await setup()
+  await alice.sessions.devices('bob')
+  await alice.sessions.submitNewBundle()
+  expect(alice.store.meta('bob').devices?.[0].stale).toBe(true)
+  await alice.sessions.devices('bob')
+  expect(zalo.sent(543).filter((c) => c.uid === 'alice')).toHaveLength(2)
+
+  // bob registered again: Zalo's list carries his new iid, so alice's session (for the old one) is set up again
+  await bob.sessions.submitNewBundle()
+  const iid = bob.store.registrationId()!
+  zalo.list = { threads: [{ uid: 'bob', devices: [{ di: 2, iid }] }] }
+  await alice.sessions.loadE2eeList()
+  expect(alice.store.meta('bob').devices).toEqual([{ deviceId: 2, regId: iid }])
+  await alice.sessions.devices('bob')
+  const { cipher } = await alice.sessions.encrypt('bob', 2, 'bundle mới')
+  expect(await bob.receiver.decrypt(incoming('1', 'alice', cipher), false)).toEqual({ status: E2EE_STATUS.OK, content: 'bundle mới' })
+})
+
+test('right after a new bundle, the peers waiting for this device (waitUids) get an INIT listing our other devices', async () => {
+  const { zalo, alice } = await setup()
+  zalo.list = { waitUids: ['bob'] }
+  await alice.sessions.loadE2eeList(true)
+  while (!zalo.sent(543).some((c) => c.data.uidTo === 'bob')) await Bun.sleep(5)
+  expect(zalo.sent(541).find((c) => c.uid === 'alice' && c.data.uids[0].uid === 'bob')!.data).toMatchObject({ uids: [{ uid: 'bob', deviceId: -1 }], isReInit: 1 })
 })
 
 test('turning E2EE on (PC\'s manual upgrade): every device of the peer gets an INIT listing our other devices; complete once acked, pending until then', async () => {
@@ -307,4 +388,96 @@ test("a delete-key push for a device we never knew doesn't leave the peer with \
   await alice.sessions.onSessionEvents(548, [{ msgId: '1', sessionData: { uidFrom: 'bob', deviceId: 0, deleteType: 0 } }])
   expect(await alice.sessions.devices('bob')).toEqual([2])
   expect(bob.store.registrationId()).toBeTruthy()
+})
+
+// alice encrypts one Signal message per content field; bob reads each from the field it belongs to
+const enc = async (alice: Awaited<ReturnType<typeof setup>>['alice'], text: string | Buffer) => (await alice.sessions.encrypt('bob', 2, text)).cipher
+
+test('a photo decrypts: the AES key rides in the href e2esession= param, the other fields in place', async () => {
+  const { alice, bob } = await setup()
+  await alice.sessions.devices('bob')
+  const content = {
+    href: `https://e2e.zalo/p.jpg?e2esession=${await enc(alice, 'AESKEY-abc/d+e=')}`,
+    params: await enc(alice, '{"w":100}'),
+    thumb: '',
+    title: await enc(alice, 'ảnh của tôi'),
+    description: '',
+  }
+  const dec = await bob.receiver.decrypt({ cliMsgId: 'p1', uidFrom: 'alice', msgType: 'chat.photo', content, paramsExt: { platformType: 2 } }, false)
+  expect(dec.status).toBe(E2EE_STATUS.OK)
+  expect(dec.content).toEqual({ href: 'https://e2e.zalo/p.jpg?e2esession=AESKEY-abc/d+e=', params: '{"w":100}', thumb: '', title: 'ảnh của tôi', description: '' })
+})
+
+test('a sticker decrypts: id/catId/type are 4-byte little-endian integers', async () => {
+  const { alice, bob } = await setup()
+  await alice.sessions.devices('bob')
+  const content = { id: await enc(alice, numberToBuffer(45678)), catId: await enc(alice, numberToBuffer(123)), type: await enc(alice, numberToBuffer(7)) }
+  const dec = await bob.receiver.decrypt({ cliMsgId: 's1', uidFrom: 'alice', msgType: 'chat.sticker', content, paramsExt: { platformType: 2 } }, false)
+  expect(dec.status).toBe(E2EE_STATUS.OK)
+  expect(dec.content).toEqual({ id: 45678, catId: 123, type: 7 })
+})
+
+test('a location decrypts: plain description/params/title fields', async () => {
+  const { alice, bob } = await setup()
+  await alice.sessions.devices('bob')
+  const content = { description: await enc(alice, 'Hồ Gươm'), params: await enc(alice, '{"lat":21}'), title: await enc(alice, 'Vị trí') }
+  const dec = await bob.receiver.decrypt({ cliMsgId: 'l1', uidFrom: 'alice', msgType: 'chat.location.new', content, paramsExt: { platformType: 2 } }, false)
+  expect(dec.status).toBe(E2EE_STATUS.OK)
+  expect(dec.content).toEqual({ description: 'Hồ Gươm', params: '{"lat":21}', title: 'Vị trí' })
+})
+
+test('a sticker sends to /message/sticker encrypted and the peer decrypts the numeric ids', async () => {
+  const { alice, bob } = await setup()
+  const { api, posted } = fakeApi()
+  const sent = await alice.sender.sendSticker(api, 'bob', { id: 45678, catId: 123, type: 7 })
+  expect(sent.content).toEqual({ id: 45678, catId: 123, type: 7 })
+  expect(posted[0]).toMatchObject({ url: 'https://e2e/api/e2ee/pc/message/sticker', threadId: 'bob', clientId: sent.cliMsgId })
+  const p = JSON.parse(posted[0].listParams)[0]
+  // the server delivers stickerId/cateId back to the peer as id/catId
+  const dec = await bob.receiver.decrypt({ cliMsgId: sent.cliMsgId, uidFrom: 'alice', msgType: 'chat.sticker', content: { id: p.stickerId, catId: p.cateId, type: p.type }, paramsExt: { platformType: 2 } }, false)
+  expect(dec).toEqual({ status: E2EE_STATUS.OK, content: { id: 45678, catId: 123, type: 7 } })
+})
+
+test('a gif sends to /message/gif encrypted: href and thumb decrypt, width/height/type stay plaintext', async () => {
+  const { alice, bob } = await setup()
+  const { api, posted } = fakeApi()
+  const sent = await alice.sender.sendGif(api, 'bob', { url: 'https://giphy/x.gif', thumb: 'https://giphy/x.webp', width: 200, height: 150 })
+  expect(sent.content).toEqual({ href: 'https://giphy/x.gif', thumb: 'https://giphy/x.webp', width: 200, height: 150, type: 0 })
+  expect(posted[0]).toMatchObject({ url: 'https://e2e/api/e2ee/pc/message/gif', threadId: 'bob' })
+  const p = JSON.parse(posted[0].listParams)[0]
+  expect(p).toMatchObject({ width: 200, height: 150, msg: '', type: 0, src: 1 })
+  const dec = await bob.receiver.decrypt({ cliMsgId: sent.cliMsgId, uidFrom: 'alice', msgType: 'chat.gif', content: { href: p.href, thumb: p.thumb, width: p.width, height: p.height, type: p.type }, paramsExt: { platformType: 2 } }, false)
+  expect(dec).toEqual({ status: E2EE_STATUS.OK, content: { href: 'https://giphy/x.gif', thumb: 'https://giphy/x.webp', width: 200, height: 150, type: 0 } })
+})
+
+test('E2EE media (LINEAR AES-256-GCM): the e2esession key (key‖iv‖tag) decrypts a photo blob', () => {
+  const key = randomBytes(32)
+  const iv = randomBytes(12)
+  const plain = Buffer.from('ảnh gốc 📷 nhiều byte ngẫu nhiên')
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const ct = Buffer.concat([cipher.update(plain), cipher.final()])
+  const e2e = Buffer.concat([key, iv, cipher.getAuthTag()]).toString('base64') // PC's generateBase64AesKey
+  const url = `https://photo-stal.zdn.vn/no/abc/def.jpg?e2esession=${e2e}`
+  const k = parseE2eeKey(url)!
+  expect(k.block).toBe(false)
+  expect(decryptE2eeMedia(ct, k).equals(plain)).toBe(true)
+  expect(stripE2eeParams(url)).toBe('https://photo-stal.zdn.vn/no/abc/def.jpg')
+})
+
+test('E2EE media (BLOCK_BY_BLOCK AES-256-CTR, version=2): the e2esession key (key‖iv) decrypts a video blob', () => {
+  const key = randomBytes(32)
+  const iv = randomBytes(16)
+  const plain = Buffer.from('nội dung video đã mã hóa')
+  const cipher = createCipheriv('aes-256-ctr', key, iv)
+  const ct = Buffer.concat([cipher.update(plain), cipher.final()])
+  const e2e = Buffer.concat([key, iv]).toString('base64')
+  const url = `https://video.zdn.vn/v.mp4?e2esession=${e2e}&version=2`
+  const k = parseE2eeKey(url)!
+  expect(k.block).toBe(true)
+  expect(decryptE2eeMedia(ct, k).equals(plain)).toBe(true)
+  expect(stripE2eeParams(url)).toBe('https://video.zdn.vn/v.mp4')
+})
+
+test('parseE2eeKey: no e2esession param → null (a plaintext url)', () => {
+  expect(parseE2eeKey('https://cdn.zdn.vn/a.jpg')).toBeNull()
 })

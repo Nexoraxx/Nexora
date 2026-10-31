@@ -21,6 +21,7 @@ export function PickList({
   initial = [],
   children,
   error,
+  selectAll,
   onConfirm,
   onClose,
 }: {
@@ -34,6 +35,8 @@ export function PickList({
   initial?: string[];
   children?: ReactNode;
   error?: string;
+  // a "Chọn tất cả" row over what the search shows, and the count picked by the buttons
+  selectAll?: boolean;
   onConfirm: (ids: string[]) => Promise<unknown>;
   onClose: () => void;
 }) {
@@ -51,6 +54,8 @@ export function PickList({
       .finally(() => setBusy(false));
   };
   const shown = items.filter((i) => fold(i.search).includes(fold(q.trim())));
+  const free = shown.filter((i) => !taken.includes(i.id)).map((i) => i.id);
+  const ticked = free.filter((id) => picked.includes(id)).length;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -58,6 +63,15 @@ export function PickList({
         <DialogTitle>{title}</DialogTitle>
         {children}
         <Input autoFocus placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} />
+        {selectAll && free.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg p-2 font-medium hover:bg-muted">
+            <Checkbox
+              checked={ticked === free.length ? true : ticked ? "indeterminate" : false}
+              onCheckedChange={() => setPicked((p) => (ticked === free.length ? p.filter((id) => !free.includes(id)) : [...new Set([...p, ...free])]))}
+            />
+            {q.trim() ? `Chọn tất cả kết quả (${free.length})` : `Chọn tất cả (${free.length})`}
+          </label>
+        )}
         <div className="max-h-80 overflow-y-auto">
           {shown.map((i) => {
             const joined = taken.includes(i.id);
@@ -73,6 +87,7 @@ export function PickList({
         </div>
         {(note ?? error) && <p className="text-xs text-red-600">{note ?? error}</p>}
         <DialogFooter>
+          {selectAll && <span className="mr-auto self-center text-xs text-muted-foreground">Đã chọn {picked.length}</span>}
           <Button variant="outline" onClick={onClose}>
             Hủy
           </Button>

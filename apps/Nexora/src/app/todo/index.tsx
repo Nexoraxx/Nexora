@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "@/core/http/api";
 import { onEvent } from "@/core/websocket/events";
 import { Avatar } from "@/app/profile/components/avatar/user-avatar";
 import { Confirm } from "@/shared/components/dialogs/confirm-dialog";
 import type { Ask } from "@/shared/models/dialog.model";
+import type { Account } from "@/shared/types";
 import type { Todo, TodoTarget, TodoList, TodoPerson } from "@/app/todo/models/todo.model";
 import { MUTED } from "@/app/todo/constants/todo.constants";
 import { TodoEditor } from "@/app/todo/components/todo-editor";
 import { Button } from "@/shared/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
 import { cn } from "@/shared/utils/shadcn";
 
@@ -54,30 +56,40 @@ function statusAsk(t: Todo, me: string, status: number): Pick<Ask, "title" | "me
 
 // Zalo PC's To-Do: "Tôi giao" (created), "Cần làm" (assigned), "Theo dõi" (watching), each split into "Chưa xong" /
 // "Đã xong", newest change first; a row opens its source message. Offered only where Zalo turned the feature on.
+// "Tất cả" merges every account's todos, each tagged with its account and acted on as that account.
 // ponytail: no search, advanced filters, stats or editing; PC's detail view is the place to add them
-export function Todos({ accountId, online, onOpen }: { accountId: string; online: boolean; onOpen: (t: TodoTarget) => void }) {
-  const base = `/accounts/${accountId}/todos`;
-  const [data, setData] = useState<TodoList>();
+type Row = Todo & { accountId: string };
+
+export function Todos({ accounts, tag, onOpen }: { accounts: Account[]; tag?: (accountId: string) => ReactNode; onOpen: (t: TodoTarget & { accountId: string }) => void }) {
+  // by account id, once fetched
+  const [data, setData] = useState<Record<string, TodoList>>({});
   const [tab, setTab] = useState<Tab>("assigner");
   const [done, setDone] = useState(false);
-  const [creating, setCreating] = useState(false);
+  // the account a new todo is given from
+  const [creating, setCreating] = useState<string>();
   const [ask, setAsk] = useState<Ask>();
   const [note, setNote] = useState<{ text: string; error?: boolean }>();
-  const load = () => api<TodoList>(base).then(setData, (e) => setNote({ text: e.message, error: true }));
+  const online = accounts.filter((a) => a.status === "online").map((a) => a.id);
+  const load = (id: string) => api<TodoList>(`/accounts/${id}/todos`).then((d) => setData((m) => ({ ...m, [id]: d })), (e) => setNote({ text: e.message, error: true }));
   useEffect(() => {
-    if (!online) return;
-    load();
-    return onEvent((e) => e.type === "todos" && e.accountId === accountId && load());
-  }, [accountId, online]);
-  const run = (p: Promise<unknown>, ok?: string) => (setNote(undefined), p.then(() => (ok && setNote({ text: ok }), load()), (e) => setNote({ text: e.message, error: true })));
-  const who = (p: TodoPerson) => (p.userId === accountId ? "Bạn" : p.name);
-  const status = (t: Todo, s: number) => api(`${base}/${t.id}/status`, "PUT", { status: s });
+    online.forEach(load);
+    return onEvent((e) => e.type === "todos" && online.includes(e.accountId) && load(e.accountId));
+  }, [online.join()]);
+  const run = (id: string, p: Promise<unknown>, ok?: string) =>
+    (setNote(undefined), p.then(() => (ok && setNote({ text: ok }), load(id)), (e) => setNote({ text: e.message, error: true })));
+  const status = (t: Row, s: number) => api(`/accounts/${t.accountId}/todos/${t.id}/status`, "PUT", { status: s });
 
-  if (!online) return <p className={cn(MUTED, "p-4")}>Cần kết nối</p>;
-  if (!data) return <p className={cn(MUTED, "p-4")}>{note?.text ?? "Đang tải dữ liệu"}</p>;
-  if (!data.enabled) return <p className="p-4">Zalo chưa bật To-Do cho tài khoản này.</p>;
+  if (!online.length) return <p className={cn(MUTED, "p-4")}>Cần kết nối</p>;
+  const loaded = online.filter((id) => data[id]);
+  if (!loaded.length) return <p className={cn(MUTED, "p-4")}>{note?.text ?? "Đang tải dữ liệu"}</p>;
+  const enabled = loaded.filter((id) => data[id].enabled);
+  if (!enabled.length) return <p className="p-4">Zalo chưa bật To-Do cho {accounts.length > 1 ? "các tài khoản này" : "tài khoản này"}.</p>;
+  const name = (id: string) => accounts.find((a) => a.id === id)?.name ?? id;
 
-  const mine = data.todos.filter((t) => inTab(t, tab, accountId));
+  const mine = enabled
+    .flatMap((id) => data[id].todos.map((t): Row => ({ ...t, accountId: id })))
+    .filter((t) => inTab(t, tab, t.accountId))
+    .sort((a, b) => b.updateTime - a.updateTime);
   const open = mine.filter((t) => t.status !== DONE);
   const closed = mine.filter((t) => t.status === DONE);
   const [, , emptyOpen, emptyDone] = TABS.find(([key]) => key === tab)!;
@@ -95,9 +107,25 @@ export function Todos({ accountId, online, onOpen }: { accountId: string; online
             ))}
           </TabsList>
         </Tabs>
-        <Button className="ml-auto" onClick={() => setCreating(true)}>
-          Giao việc
-        </Button>
+        {enabled.length > 1 ? (
+          // several accounts with To-Do: pick the one the todo is given from
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="ml-auto">Giao việc</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {enabled.map((id) => (
+                <DropdownMenuItem key={id} onSelect={() => setCreating(id)}>
+                  Giao từ <span className="truncate font-medium">{name(id)}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button className="ml-auto" onClick={() => setCreating(enabled[0])}>
+            Giao việc
+          </Button>
+        )}
       </div>
       <div className="flex gap-1.5 px-4 pb-2">
         <Button size="sm" variant={done ? "outline" : "default"} onClick={() => setDone(false)}>
@@ -111,19 +139,22 @@ export function Todos({ accountId, online, onOpen }: { accountId: string; online
       <div className="flex-1 overflow-y-auto px-4">
         {!(done ? closed : open).length && <p className={cn(MUTED, "py-4 text-center")}>{done ? emptyDone : emptyOpen}</p>}
         {(done ? closed : open).map((t) => {
-          const creator = t.creator.userId === accountId;
-          const assignee = t.assignees.some((a) => a.userId === accountId);
+          const me = t.accountId;
+          const who = (p: TodoPerson) => (p.userId === me ? "Bạn" : p.name);
+          const creator = t.creator.userId === me;
+          const assignee = t.assignees.some((a) => a.userId === me);
           const overdue = t.dueDate > 0 && t.dueDate < Date.now() && t.status !== DONE;
-          const change = (s: number) => setAsk({ ...statusAsk(t, accountId, s), ok: "Có", run: () => status(t, s).then(load) });
+          const change = (s: number) => setAsk({ ...statusAsk(t, me, s), ok: "Có", run: () => status(t, s).then(() => load(me)) });
           return (
-            <div key={t.id} className="mb-2 rounded-lg border p-3">
+            <div key={`${me}:${t.id}`} className="mb-2 rounded-lg border p-3">
               <button
                 className="flex w-full flex-col gap-1 text-left"
                 title="Nhấn để xem tin nhắn gốc"
-                onClick={() => onOpen({ threadId: t.thread.threadId, isGroup: t.thread.isGroup, name: t.thread.name, avatar: t.thread.avatar, msgId: t.msgId ?? undefined })}
+                onClick={() => onOpen({ threadId: t.thread.threadId, isGroup: t.thread.isGroup, name: t.thread.name, avatar: t.thread.avatar, msgId: t.msgId ?? undefined, accountId: me })}
               >
                 <div className="flex items-start gap-2">
                   <span className="line-clamp-2 min-w-0 flex-1 font-medium break-words">{t.title || t.content}</span>
+                  {tag?.(me)}
                   <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs", STATUS[t.status]?.[1])}>{STATUS[t.status]?.[0]}</span>
                 </div>
                 {t.title && t.content && <p className="line-clamp-2 text-[13px] break-words text-muted-foreground">{t.content}</p>}
@@ -142,7 +173,7 @@ export function Todos({ accountId, online, onOpen }: { accountId: string; online
               </button>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {assignee && t.status === WAITING ? (
-                  <Button size="sm" onClick={() => run(status(t, IN_PROCESS))}>
+                  <Button size="sm" onClick={() => run(me, status(t, IN_PROCESS))}>
                     Nhận việc
                   </Button>
                 ) : (
@@ -152,8 +183,8 @@ export function Todos({ accountId, online, onOpen }: { accountId: string; online
                     </Button>
                   )
                 )}
-                {creator && t.status !== DONE && t.assignees.some((a) => a.userId !== accountId && a.status !== DONE) && (
-                  <Button size="sm" variant="outline" onClick={() => run(api(`${base}/${t.id}/remind`, "POST"), "Bạn đã gửi yêu cầu cập nhật công việc")}>
+                {creator && t.status !== DONE && t.assignees.some((a) => a.userId !== me && a.status !== DONE) && (
+                  <Button size="sm" variant="outline" onClick={() => run(me, api(`/accounts/${me}/todos/${t.id}/remind`, "POST"), "Bạn đã gửi yêu cầu cập nhật công việc")}>
                     Nhắc nhở
                   </Button>
                 )}
@@ -166,7 +197,7 @@ export function Todos({ accountId, online, onOpen }: { accountId: string; online
                         title: "Xoá công việc",
                         message: "Công việc này sẽ không còn hiển thị trên danh sách của bạn. Bạn có chắc rằng bạn muốn xoá công việc này không?",
                         ok: "Xoá",
-                        run: () => api(`${base}/${t.id}`, "DELETE").then(load),
+                        run: () => api(`/accounts/${me}/todos/${t.id}`, "DELETE").then(() => load(me)),
                       })
                     }
                   >
@@ -178,7 +209,7 @@ export function Todos({ accountId, online, onOpen }: { accountId: string; online
           );
         })}
       </div>
-      {creating && <TodoEditor accountId={accountId} onClose={() => (setCreating(false), load())} />}
+      {creating && <TodoEditor accountId={creating} onClose={() => (setCreating(undefined), load(creating))} />}
       {ask && <Confirm ask={ask} onClose={() => setAsk(undefined)} />}
     </div>
   );

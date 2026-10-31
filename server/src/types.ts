@@ -36,6 +36,8 @@ export type ServerEvent =
   | { type: 'auto_replies'; accountId: string }
   // To-Do changed (here, or a "chat.todo" message from any device): an open todo list reloads
   | { type: 'todos'; accountId: string }
+  // a "Gửi hàng loạt" run started, moved on or changed state: open lists reload
+  | { type: 'bulk_sends'; accountId: string }
   // a group's details changed (group event from any device): an open members panel reloads
   | { type: 'group'; accountId: string; groupId: string }
   | { type: 'receipt'; accountId: string; threadId: string }

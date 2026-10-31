@@ -1,11 +1,9 @@
-/* something colorful under the glass bars of the chat */
+/* a quiet brand-blue tint under the glass bars of the chat: enough for the glass to read, calm enough to read on */
 .conversation {
   background:
-    radial-gradient(circle at 12% 18%, #bcd4ff 0, transparent 38%),
-    radial-gradient(circle at 88% 26%, #ffd3e6 0, transparent 34%),
-    radial-gradient(circle at 70% 88%, #c8f1de 0, transparent 40%),
-    radial-gradient(circle at 20% 80%, #ffe7c2 0, transparent 30%),
-    #eef1f6;
+    radial-gradient(circle at 10% 0%, #dbe7ff 0, transparent 45%),
+    radial-gradient(circle at 95% 100%, #e3ecfb 0, transparent 50%),
+    #f1f4f9;
 }
 
 /* the library sets filter inline on .glass__warp (see Glass.tsx) */

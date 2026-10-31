@@ -51,7 +51,8 @@ test('after a reconnect, requests go out on the new socket and its replies are r
   zca.emit('ready', 'me')
   await tick()
   expect(first.sent).toEqual([])
-  expect(second.sent.map((s) => s.cmd)).toEqual([564, 540, 563])
+  // a new bundle: our phone and web are asked for theirs (PC's INIT_SUBDEVICE), then the E2EE list
+  expect(second.sent.map((s) => s.cmd)).toEqual([564, 540, 541, 541, 563])
   expect(e2ee.state('me', 'peer')).toBe('on')
 })
 

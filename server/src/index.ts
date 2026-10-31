@@ -11,6 +11,8 @@ import { autoReplyRoutes } from './modules/auto-replies'
 import type IAutoReplyService from './modules/auto-replies/services/interfaces/auto-reply-service'
 import { boardRoutes } from './modules/boards'
 import type IBoardService from './modules/boards/services/interfaces/board-service'
+import { bulkSendRoutes, bulkTemplateRoutes } from './modules/bulk-sends'
+import type IBulkSendService from './modules/bulk-sends/services/interfaces/bulk-send-service'
 import { contactRoutes } from './modules/contacts'
 import type IContactService from './modules/contacts/services/interfaces/contact-service'
 import { conversationRoutes } from './modules/conversations'
@@ -47,6 +49,7 @@ const settings = container.get<ISettingsService>(TOKENS.SettingsService)
 const quickMessages = container.get<IQuickMessageService>(TOKENS.QuickMessageService)
 const autoReplies = container.get<IAutoReplyService>(TOKENS.AutoReplyService)
 const todos = container.get<ITodoService>(TOKENS.TodoService)
+const bulkSends = container.get<IBulkSendService>(TOKENS.BulkSendService)
 
 const app = new Hono()
 
@@ -56,6 +59,7 @@ useExceptionHandler(app)
 
 app.get('/events', eventsWebSocket)
 app.route('/accounts', accountRoutes(accounts))
+app.route('/', bulkTemplateRoutes(bulkSends))
 app.route('/accounts/:accountId', contactRoutes(contacts))
 app.route('/accounts/:accountId', messageRoutes(messages))
 app.route('/accounts/:accountId', stickerRoutes(stickers))
@@ -68,6 +72,7 @@ app.route('/accounts/:accountId', settingsRoutes(settings))
 app.route('/accounts/:accountId', quickMessageRoutes(quickMessages))
 app.route('/accounts/:accountId', autoReplyRoutes(autoReplies))
 app.route('/accounts/:accountId', todoRoutes(todos))
+app.route('/accounts/:accountId', bulkSendRoutes(bulkSends))
 
 // idleTimeout (s): turning E2EE on waits up to 10 s for the peer's ack after its own socket round trips; Bun's default 10 s cuts it
 const server = Bun.serve({ hostname: '127.0.0.1', port: config.port, fetch: app.fetch, websocket, idleTimeout: 60 })

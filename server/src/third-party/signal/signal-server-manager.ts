@@ -12,6 +12,8 @@ export const SIGNAL_CMD = {
   INIT_SESSION_MOBILE: 545,
   DONE_PROCESS_SESSION: 545,
   SESSION_OFFLINE: 516,
+  // the cmd a NOTIFY_DELETE_KEY is reported processed with
+  DELETE_KEY: 547,
   NOTIFY_DELETE_KEY: 548,
   REQUEST_PREKEYS: 549,
   RECEIVE_ONEONE: 551,
@@ -106,10 +108,10 @@ export class SignalServerManager extends EventEmitter {
     })
   }
 
-  // null: no key registered for this device (err -1)
-  async getKeyId(): Promise<{ keyId: number; submitTs?: number } | null> {
+  // null: no key registered for this device (err -1). Zalo sends keyId as a string or a number; callers compare by value
+  async getKeyId(): Promise<{ keyId: number | string; submitTs?: number | string } | null> {
     try {
-      const d = await this.request<{ keyId: number; submitTs?: number }>(SIGNAL_CMD.GET_KEY_ID, { platformType: 2 })
+      const d = await this.request<{ keyId: number | string; submitTs?: number | string }>(SIGNAL_CMD.GET_KEY_ID, { platformType: 2 })
       return d?.keyId ? d : null
     } catch (e) {
       if ((e as { code?: number }).code === -1) return null

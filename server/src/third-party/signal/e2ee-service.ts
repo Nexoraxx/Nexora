@@ -64,8 +64,7 @@ export class E2eeService extends EventEmitter<Events> {
   private async init(accountId: string) {
     const a = this.accounts.get(accountId)
     if (!a) return
-    await a.sessions.ensureRegistered()
-    await a.sessions.loadE2eeList()
+    await a.sessions.loadE2eeList(await a.sessions.ensureRegistered())
     a.listLoaded = true
     this.emit('changed', accountId)
   }
@@ -122,5 +121,17 @@ export class E2eeService extends EventEmitter<Events> {
     const a = this.accounts.get(accountId)
     if (!a) throw new Error('Mã hóa đầu cuối chưa sẵn sàng')
     return a.sender.sendText(api, uid, text, styles)
+  }
+
+  sendSticker(accountId: string, api: API, uid: string, sticker: { id: number; catId: number; type: number }) {
+    const a = this.accounts.get(accountId)
+    if (!a) throw new Error('Mã hóa đầu cuối chưa sẵn sàng')
+    return a.sender.sendSticker(api, uid, sticker)
+  }
+
+  sendGif(accountId: string, api: API, uid: string, gif: { url: string; thumb: string; width: number; height: number }) {
+    const a = this.accounts.get(accountId)
+    if (!a) throw new Error('Mã hóa đầu cuối chưa sẵn sàng')
+    return a.sender.sendGif(api, uid, gif)
   }
 }

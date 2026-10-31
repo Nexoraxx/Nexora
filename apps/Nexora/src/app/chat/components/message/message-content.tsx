@@ -10,6 +10,7 @@ import { attach, fileSize, params, summary } from "@/app/chat/utils/chat.utils";
 import { E2EE } from "@/app/chat/constants/chat.constants";
 import { FileTextIcon, ListChecksIcon, LockIcon, MapPinIcon } from "lucide-react";
 import { cn } from "@/shared/utils/shadcn";
+import { useMediaSrc } from "@/shared/hooks/use-media";
 
 // Zalo PC's sticker image endpoint; the built-in "Củ hành" set (category 0) lives on its static domain
 const stickerImage = (id: unknown, catId?: unknown) =>
@@ -55,19 +56,19 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
     case "chat.photo":
     case "chat.gif":
     case "chat.doodle":
-      return <img className="max-h-80 max-w-70 cursor-pointer rounded-md" src={c.href || c.thumb} alt="" onClick={() => c.href && openExternal(c.href)} />;
+      return <Photo accountId={me} href={c.href} thumb={c.thumb} />;
     case "chat.sticker":
       return <img className="size-30" src={stickerImage(c.id, c.catId)} alt="sticker" />;
     case "chat.video.msg":
-      return <video className="max-h-80 max-w-70 rounded-md" src={c.href} poster={c.thumb} controls />;
+      return <Media kind="video" accountId={me} href={c.href} thumb={c.thumb} />;
     case "chat.voice":
-      return <audio src={c.href} controls />;
+      return <Media kind="audio" accountId={me} href={c.href} />;
     case "share.file":
       // Zalo PC sends a picked video as a file and plays .mp4 files in place (media_files.supported_exts without video_file_v2)
       if (String(params(c).fileExt ?? "").toLowerCase() === "mp4")
         return (
           <div>
-            <video className="max-h-80 max-w-70 rounded-md" src={c.href} controls preload="metadata" />
+            <Media kind="video" accountId={me} href={c.href} />
             <div className="mt-0.5 max-w-70 truncate text-xs text-muted-foreground">
               {c.title} · {fileSize(params(c).fileSize)}
             </div>
@@ -131,4 +132,21 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
     default:
       return <i className="text-xs text-muted-foreground">{summary(m.msgType, m.content)}</i>;
   }
+}
+
+// E2EE photos/videos/voice are AES-encrypted blobs: useMediaSrc fetches them through the decrypting proxy; plaintext
+// urls pass straight through. A hook can't live inside the switch, so media gets its own components.
+function Photo({ accountId, href, thumb }: { accountId: string; href?: string; thumb?: string }) {
+  const src = useMediaSrc(accountId, href || thumb);
+  return <img className="max-h-80 max-w-70 cursor-pointer rounded-md bg-muted" src={src} alt="" onClick={() => (href || thumb) && openExternal((href || thumb)!)} />;
+}
+
+function Media({ kind, accountId, href, thumb }: { kind: "video" | "audio"; accountId: string; href?: string; thumb?: string }) {
+  const src = useMediaSrc(accountId, href);
+  const poster = useMediaSrc(accountId, thumb);
+  return kind === "video" ? (
+    <video className="max-h-80 max-w-70 rounded-md" src={src} poster={poster || undefined} controls preload="metadata" />
+  ) : (
+    <audio src={src} controls />
+  );
 }
