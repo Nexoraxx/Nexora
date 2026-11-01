@@ -6,10 +6,10 @@ import { Formatted } from "@/app/chat/components/message/formatted";
 import { MENTION_ALL } from "@/shared/constants/text.constants";
 import { splitMentions } from "@/shared/utils/text.utils";
 import type { TextStyle } from "@/shared/models/text.model";
-import { attach, fileSize, params, summary } from "@/app/chat/utils/chat.utils";
+import { attach, CALL_LOGS, callLog, fileSize, params, summary } from "@/app/chat/utils/chat.utils";
 import { E2EE } from "@/app/chat/constants/chat.constants";
 import { useState } from "react";
-import { LinkIcon, ListChecksIcon, LockIcon, MapPinIcon, MicOffIcon, StickerIcon, VideoOffIcon } from "lucide-react";
+import { LinkIcon, ListChecksIcon, LockIcon, MapPinIcon, MicOffIcon, PhoneIncomingIcon, PhoneMissedIcon, PhoneOutgoingIcon, StickerIcon, VideoIcon, VideoOffIcon } from "lucide-react";
 import { Img, Placeholder } from "@/shared/components/img";
 import { cn } from "@/shared/utils/shadcn";
 import { useMediaSrc } from "@/shared/hooks/use-media";
@@ -24,7 +24,20 @@ const stickerImage = (id: unknown, catId?: unknown) =>
 const CARD = "flex max-w-80 items-center gap-2 rounded-md border bg-white px-3 py-1.5 text-left";
 const FILE = `${CARD} hover:bg-muted`;
 
-export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: string; onProfile: (userId: string) => void; onPoll?: (pollId: string) => void }) {
+export function Content({
+  m,
+  me,
+  onProfile,
+  onPoll,
+  onCall,
+}: {
+  m: MessageRow;
+  me: string;
+  onProfile: (userId: string) => void;
+  onPoll?: (pollId: string) => void;
+  // "GỌI LẠI" on a call log
+  onCall?: (video: boolean) => void;
+}) {
   const c = attach(m.content);
   switch (m.msgType) {
     case E2EE:
@@ -108,6 +121,23 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
     }
     // contact card: params is the user id
     case "chat.recommended":
+      if (CALL_LOGS.has(c.action ?? "")) {
+        const log = callLog(c, m.fromUid === me);
+        const Icon = log.video ? VideoIcon : log.missed ? PhoneMissedIcon : log.out ? PhoneOutgoingIcon : PhoneIncomingIcon;
+        return (
+          <div className="min-w-48">
+            <b className={cn(log.missed && "text-destructive")}>{log.title}</b>
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Icon className={cn("size-3.5", log.missed && "text-destructive")} /> {log.text}
+            </div>
+            {log.callback && onCall && (
+              <button className="mt-2 w-full rounded-md bg-muted py-1 text-xs font-semibold text-primary hover:bg-muted/70" onClick={() => onCall(log.video)}>
+                GỌI LẠI
+              </button>
+            )}
+          </div>
+        );
+      }
       if (c.action === "recommened.user")
         return (
           <button className={FILE} onClick={() => c.params && onProfile(c.params)}>

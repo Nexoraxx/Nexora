@@ -205,6 +205,18 @@ test('preload stores last messages and applies read markers from other devices',
   expect(thread(messages, 'u3')).toMatchObject({ msgId: '100', unread: 0 })
 })
 
+test("preload asks for PC's 40 newest conversations only (more overflows get-last-msgs' GET with a 431)", async () => {
+  const { db, zca, api } = setup()
+  for (let i = 1; i <= 50; i++)
+    db.run(`INSERT INTO preview_message (accountId, convId, msgId, isGroup, messageTime) VALUES ('me', 't${i}', 'm${i}', 0, ?)`, [i])
+  zca.emit('attached', ME, api as never)
+  await tick()
+  const asked = (api.getLastMessages.mock.calls[0] as unknown as [{ threadId: string }[]])[0]
+  expect(asked).toHaveLength(40)
+  expect(asked[0]).toMatchObject({ threadId: 't50', msgId: 'm50' })
+  expect(asked.some((p) => p.threadId === 't10')).toBe(false)
+})
+
 test('media lists photos/videos, files and link cards of one thread, newest first', async () => {
   const { zca, messages } = setup()
   const typed = (msgId: string, msgType: string, content: unknown) => new UserMessage(ME, { ...raw(msgId, 'u1', '0'), msgType, content, idTo: '0' } as unknown as TMessage)

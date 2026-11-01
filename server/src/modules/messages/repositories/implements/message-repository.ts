@@ -103,9 +103,13 @@ export default class MessageRepository implements IMessageRepository {
       .get(accountId, threadId, accountId)
   }
 
+  // Zalo PC's preload cache keeps the max_preload_msg (40) newest conversations: get-last-msgs is a GET, and every
+  // conversation's last msgId in its URL soon outgrows the headers Zalo takes (431)
   previews(accountId: string) {
     return this.db
-      .query<{ threadId: string; isGroup: number; msgId: string }, [string]>(`SELECT convId AS threadId, isGroup, msgId FROM preview_message WHERE accountId = ?`)
+      .query<{ threadId: string; isGroup: number; msgId: string }, [string]>(
+        `SELECT convId AS threadId, isGroup, msgId FROM preview_message WHERE accountId = ? ORDER BY messageTime DESC LIMIT 40`,
+      )
       .all(accountId)
   }
 

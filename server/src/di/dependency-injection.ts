@@ -54,6 +54,7 @@ import type ITodoService from '../modules/todos/services/interfaces/todo-service
 import { ZcaService } from '../third-party/zalo/zalo-client'
 import { E2eeService } from '../third-party/signal/e2ee-service'
 import { Sync2Service } from '../third-party/sync2/sync2-service'
+import { ZcallService } from '../third-party/zcall/zcall-service'
 import { TOKENS } from './tokens'
 
 export function createContainer(database: Database = openDatabase(config.dbPath)) {
@@ -62,6 +63,7 @@ export function createContainer(database: Database = openDatabase(config.dbPath)
   container.bind(ZcaService).toSelf()
   container.bind(E2eeService).toSelf()
   container.bind(Sync2Service).toSelf()
+  container.bind(ZcallService).toSelf()
   container.bind<IAccountRepository>(TOKENS.AccountRepository).to(AccountRepository)
   container.bind<IBoardRepository>(TOKENS.BoardRepository).to(BoardRepository)
   container.bind<IBulkSendRepository>(TOKENS.BulkSendRepository).to(BulkSendRepository)

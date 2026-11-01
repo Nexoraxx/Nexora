@@ -23,7 +23,7 @@ import { SelectionBar } from "@/app/chat/components/conversation/selection-bar";
 import { Composer } from "@/app/chat/components/input/composer";
 import { ForwardDialog } from "@/app/chat/components/dialogs/forward-dialog";
 import { ReplacePinDialog } from "@/app/chat/components/dialogs/replace-pin-dialog";
-import { ClockIcon, EllipsisIcon, LockIcon, PanelRightIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
+import { ClockIcon, EllipsisIcon, LockIcon, PanelRightIcon, PhoneIcon, SearchIcon, StarIcon, VideoIcon, XIcon } from "lucide-react";
 import { ErrorBanner } from "@/shared/components/error-banner";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -151,6 +151,9 @@ export function Conversation({
     });
   const update = (msgId: string, patch: Partial<MessageRow>) => setMessages((current) => current.map((m) => (m.msgId === msgId ? { ...m, ...patch } : m)));
   const run = (p: Promise<unknown>) => p.catch((e) => setError(e.message));
+  // the call engine (ZaloCall, or Nexora's port on Linux) opens its own window
+  const call = (video: boolean) =>
+    run(api(`/accounts/${accountId}/calls`, "POST", { userId: target.threadId, name, avatar: live?.avatar ?? target.avatar, video }));
   const markSeen = () => online && document.hasFocus() && api(`${base}/seen`, "POST").catch(() => {});
   const loadPins = () =>
     api<Pins>(`${base}/pins`)
@@ -351,7 +354,7 @@ export function Conversation({
                             <div>{m.quote.msg ? <RichText text={m.quote.msg} /> : "[Đính kèm]"}</div>
                           </div>
                         )}
-                        <Content m={m} me={accountId} onProfile={onProfile} onPoll={target.isGroup ? setPollOf : undefined} />
+                        <Content m={m} me={accountId} onProfile={onProfile} onPoll={target.isGroup ? setPollOf : undefined} onCall={target.isGroup || isCloud ? undefined : call} />
                         <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground [&_svg]:size-3">
                           {time(m.sendDttm)}
                           {!!m.ttl && (
@@ -489,6 +492,16 @@ export function Conversation({
                 {target.isGroup ? "Nhóm" : isCloud ? "Lưu và đồng bộ dữ liệu giữa các thiết bị" : lastOnline ? lastSeen(lastOnline, Date.now()) : ""}
               </div>
             </div>
+            {!target.isGroup && !isCloud && (
+              <>
+                <Button variant="ghost" size="icon" title="Cuộc gọi thoại" onClick={() => call(false)}>
+                  <PhoneIcon />
+                </Button>
+                <Button variant="ghost" size="icon" title="Cuộc gọi video" onClick={() => call(true)}>
+                  <VideoIcon />
+                </Button>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon"

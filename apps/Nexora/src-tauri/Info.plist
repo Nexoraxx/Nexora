@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- merged by Tauri: the call helper (Zalo PC's ZaloCall) runs as Nexora's child, so macOS asks on Nexora's behalf -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Nexora cần micro để gọi thoại và gọi video.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Nexora cần camera để gọi video.</string>
+</dict>
+</plist>
