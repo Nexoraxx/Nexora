@@ -20,6 +20,7 @@ import MessageService from './services/implements/message-service'
 import { SendMessageRequest } from './dtos/requests/message.request'
 import type { E2eeService, E2eeState } from '../../third-party/signal/e2ee-service'
 import type { Decrypted } from '../../third-party/signal/e2ee-message-receiver'
+import type { Sync2Service } from '../../third-party/sync2/sync2-service'
 
 const ME = 'me'
 const raw = (msgId: string, from: string, to: string, content: unknown = `text ${msgId}`) =>
@@ -80,8 +81,9 @@ const setup = () => {
     sendGif: mock(async () => ({ msgId: '602', cliMsgId: 'c602', content: { href: 'g', thumb: 't', width: 1, height: 1, type: 0 } })),
     enable: mock(async (): Promise<'complete' | 'pending'> => 'pending'),
   })
-  const messages = new MessageService(new MessageRepository(db), zca, contacts as unknown as IContactService, conversations as unknown as IConversationService, e2ee as unknown as E2eeService)
-  return { db, api, zca, contacts, ttls, forwardUtils, e2ee, states, decrypted, messages }
+  const sync = new EventEmitter()
+  const messages = new MessageService(new MessageRepository(db), zca, contacts as unknown as IContactService, conversations as unknown as IConversationService, e2ee as unknown as E2eeService, sync as unknown as Sync2Service)
+  return { db, api, zca, contacts, ttls, forwardUtils, e2ee, states, decrypted, messages, sync }
 }
 const thread = (s: MessageService, id: string) => s.threads(ME, 50).find((t) => t.threadId === id)
 
@@ -112,6 +114,27 @@ test('live and offline messages: preview, unread without double counting, offlin
   await tick()
   expect((await messages.history(ME, 'u1', undefined, 50)).messages.find((m) => m.msgId === '14')).toMatchObject({ msgType: 'chat.undo', content: null })
   expect(thread(messages, 'u1')?.unread).toBe(0)
+})
+
+test('messages synced from the phone: new ones stored, local copies kept, read where the phone read them', async () => {
+  const { zca, sync, messages } = setup()
+  zca.emit('message', ME, dm('10'))
+  await tick()
+  const synced = new UserMessage(ME, { ...raw('10', 'u1', ME, 'from phone'), dName: '' })
+  sync.emit('messages', ME, [synced, dm('8'), dm('9'), dm('12')], new Map([['u1', '9']]))
+  await tick()
+  const history = (await messages.history(ME, 'u1', undefined, 50)).messages
+  expect(history.map((m) => m.msgId)).toEqual(['8', '9', '10', '12'])
+  expect(history.find((m) => m.msgId === '10')).toMatchObject({ content: 'text 10' })
+  // read on the phone up to 9: 10 (live) and 12 stay unread
+  expect(thread(messages, 'u1')).toMatchObject({ msgId: '12', unread: 2 })
+  // a later sync refreshes what an earlier sync stored
+  const fromPhone = (content: string) => new UserMessage(ME, { ...raw('7', 'u1', ME, content), dName: '' })
+  sync.emit('messages', ME, [fromPhone('cũ')], new Map())
+  await tick()
+  sync.emit('messages', ME, [fromPhone('mới')], new Map())
+  await tick()
+  expect((await messages.history(ME, 'u1', undefined, 50)).messages[0]).toMatchObject({ msgId: '7', content: 'mới' })
 })
 
 test('reactions are idempotent per event id; our own echo is not counted twice; receipts merge', async () => {
@@ -518,3 +541,4 @@ test("Zalo's E2EE blacklist (-10, -11) reads as PC's \"not available with this u
     await expect(messages.enableE2ee(ME, 'f1')).rejects.toThrow('Tính năng hiện không khả dụng với người dùng này')
   }
 })
+

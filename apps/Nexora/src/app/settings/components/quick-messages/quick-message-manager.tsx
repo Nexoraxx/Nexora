@@ -8,6 +8,7 @@ import { MUTED } from "@/app/settings/constants/quick-message.constants";
 import { QuickMessageForm } from "@/app/settings/components/quick-messages/quick-message-form";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/shadcn";
+import { Img } from "@/shared/components/img";
 
 // Zalo PC "Quản lý tin nhắn nhanh": the list, newest first, with create / edit / delete
 export function QuickMessageManager({ accountId }: { accountId: string }) {
@@ -41,7 +42,7 @@ export function QuickMessageManager({ accountId }: { accountId: string }) {
       {note && <p className={cn("mb-3 text-xs", note.error ? "text-red-600" : "text-green-700")}>{note.text}</p>}
       {data.items.map((q) => (
         <div key={q.id} className="group/row flex items-center gap-3 rounded-lg p-2 hover:bg-muted">
-          {q.photo && <img className="size-10 rounded object-cover" src={q.photo} alt="" />}
+          {q.photo && <Img className="size-10 rounded object-cover" src={q.photo} />}
           <div className="min-w-0 flex-1">
             <div className="font-medium">/{q.keyword}</div>
             <div className={cn(MUTED, "line-clamp-2 whitespace-pre-wrap")}>{q.title}</div>

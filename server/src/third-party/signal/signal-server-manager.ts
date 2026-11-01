@@ -54,8 +54,22 @@ export class SignalServerManager extends EventEmitter {
   private nextId = 0
   private pending = new Map<string, Pending & { cmd: number }>()
 
-  constructor(private send: (cmd: number, subCmd: number, data: unknown) => void) {
+  // reqIdPrefix: PC names signal requests signal_req_N and the other socket API requests (sync 590–592) req_N; two
+  // managers on one socket must not hand out the same reqId
+  constructor(
+    private send: (cmd: number, subCmd: number, data: unknown) => void,
+    private reqIdPrefix = 'signal_req_',
+  ) {
     super()
+  }
+
+  // PC's abortAllOnceEvent on socket close: waiting requests fail now instead of timing out
+  abortAll(code: string) {
+    for (const [reqId, p] of this.pending) {
+      this.pending.delete(reqId)
+      clearTimeout(p.timer)
+      p.reject(failure(p.cmd, code))
+    }
   }
 
   // a reply is { error_code, data, encrypt }: data decrypts to { error_code, data: { reqId, data } }
@@ -87,7 +101,7 @@ export class SignalServerManager extends EventEmitter {
 
   // the reply's data.data; an `err` in it is the command's own failure
   request<T = Record<string, unknown>>(cmd: number, data: unknown, subCmd = 0, timeoutMs = 10_000): Promise<T> {
-    const reqId = `signal_req_${this.nextId++}`
+    const reqId = `${this.reqIdPrefix}${this.nextId++}`
     return new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(reqId)

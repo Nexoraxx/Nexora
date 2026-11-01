@@ -4,6 +4,7 @@ import type { AvatarPhoto, OwnProfile } from "@/shared/types";
 import { squareJpeg } from "@/app/profile/utils/profile.utils";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/utils/shadcn";
+import { Img } from "@/shared/components/img";
 
 // "Cập nhật ảnh đại diện": upload from the computer, or pick one of "Ảnh đại diện của tôi" (the first is the current one).
 export function AvatarPicker({ accountId, onDone, onError }: { accountId: string; onDone: (p: OwnProfile) => void; onError: (e: string) => void }) {
@@ -79,7 +80,7 @@ export function AvatarPicker({ accountId, onDone, onError }: { accountId: string
               className={cn("aspect-square overflow-hidden rounded-md ring-primary", picked?.photoId === ph.photoId && "ring-3")}
               onClick={() => setPicked((cur) => (cur?.photoId === ph.photoId ? undefined : ph))}
             >
-              <img className="size-full object-cover" src={ph.thumbnail || ph.url} alt="" />
+              <Img className="size-full object-cover" src={ph.thumbnail || ph.url} />
             </button>
           ))}
         </div>

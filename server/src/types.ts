@@ -1,5 +1,8 @@
 import { AccountStatus } from "./modules/accounts/dtos/responses/account.response";
 import type { MessageRow, ReactionCount } from "./modules/messages/dtos/responses/message.response";
+import type { SyncState } from "./third-party/sync2/sync2-service";
+
+export type { SyncPhase, SyncState } from "./third-party/sync2/sync2-service";
 
 export type * from './modules/accounts/dtos/responses/account.response'
 export type * from './modules/auto-replies/dtos/responses/auto-reply.response'

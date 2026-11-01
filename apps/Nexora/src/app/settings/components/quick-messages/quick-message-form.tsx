@@ -6,6 +6,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
 import { Input } from "@/shared/components/ui/input";
 import { Textarea } from "@/shared/components/ui/textarea";
+import { Img } from "@/shared/components/img";
 
 // Zalo PC quick_message: max_keyword_length, max_msg_content_size (UTF-8 bytes), warning_remain_characters
 const MAX_KEYWORD = 20;
@@ -59,7 +60,7 @@ export function QuickMessageForm({ item, onSave, onClose }: { item?: QuickMessag
         {remain <= WARN_REMAIN && <span className={MUTED}>{remain} (kí tự còn lại)</span>}
         {item?.photo && (
           <div className="flex items-center gap-2">
-            <img className="size-14 rounded object-cover" src={item.photo} alt="" />
+            <Img className="size-14 rounded object-cover" src={item.photo} />
             <span className={MUTED}>Ảnh được chọn</span>
           </div>
         )}

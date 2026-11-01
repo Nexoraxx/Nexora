@@ -401,9 +401,9 @@ export function ConversationInfo({
         <Section title="Bảng tin">
           <BoardList accountId={accountId} threadId={id} isGroup={target.isGroup} />
         </Section>
-        <MediaSection base={`${base}/threads/${id}/media`} kind="media" title="Ảnh/Video" preview={8} />
-        <MediaSection base={`${base}/threads/${id}/media`} kind="file" title="File" preview={3} />
-        <MediaSection base={`${base}/threads/${id}/media`} kind="link" title="Link" preview={3} />
+        <MediaSection accountId={accountId} base={`${base}/threads/${id}/media`} kind="media" title="Ảnh/Video" preview={8} />
+        <MediaSection accountId={accountId} base={`${base}/threads/${id}/media`} kind="file" title="File" preview={3} />
+        <MediaSection accountId={accountId} base={`${base}/threads/${id}/media`} kind="link" title="Link" preview={3} />
         <section className="border-t-8 border-muted py-2">
           {(group || user) && (
             <button className="flex w-full items-center gap-3 px-4 py-1.5 text-left hover:bg-muted" onClick={() => setDialog("report")}>

@@ -164,7 +164,13 @@ export type ServerEvent =
   | { type: "auto_replies"; accountId: string }
   | { type: "todos"; accountId: string }
   // a "Gửi hàng loạt" run started, moved on or changed state
-  | { type: "bulk_sends"; accountId: string };
+  | { type: "bulk_sends"; accountId: string }
+  // "Đồng bộ tin nhắn" from the phone moved on
+  | ({ type: "sync_status"; accountId: string } & SyncState);
+
+// server/src/third-party/sync2: where a sync from the phone is
+export type SyncPhase = "waiting_confirm" | "preparing" | "syncing" | "paused" | "done" | "error";
+export type SyncState = { state: SyncPhase; progress?: number; conversations?: number; messages?: number; error?: string };
 
 // a pinned topic of the pin bar; msgId set when it pins a message, msgType is Zalo's numeric code (1 text, 32 photo, ...)
 export type Pin = {

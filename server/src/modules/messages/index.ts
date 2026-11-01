@@ -22,10 +22,18 @@ import {
 } from './dtos/requests/message.request'
 import { parseE2eeKey, stripE2eeParams, decryptE2eeMedia } from '../../third-party/signal/e2ee-content'
 import { list, mimeOf } from './helpers/message.helper'
+import type { Sync2Service } from '../../third-party/sync2/sync2-service'
 
 // Mounted under /accounts/:accountId. Live updates go out on /events: message, undo, reaction, receipt, typing, threads.
-export const messageRoutes = (messages: IMessageService) =>
+export const messageRoutes = (messages: IMessageService, sync: Sync2Service) =>
   new Hono()
+    // "Đồng bộ tin nhắn" from the phone; progress also goes out on /events as sync_status
+    .get('/sync', (c) => c.json(sync.status(c.req.param('accountId')!)))
+    .post('/sync', (c) => c.json(sync.start(c.req.param('accountId')!)))
+    .delete('/sync', (c) => {
+      sync.cancel(c.req.param('accountId')!)
+      return c.body(null, 204)
+    })
     .get('/threads', (c) => {
       const { limit } = ThreadsRequest.parse(c.req.query())
       return c.json(messages.threads(c.req.param('accountId')!, limit))
