@@ -298,7 +298,7 @@ export function Conversation({
               if (info !== null)
                 return (
                   <div key={m.msgId} className="my-2 text-center text-xs text-muted-foreground">
-                    <span className="inline-block max-w-[80%] rounded-full bg-white/80 px-3 py-1 shadow-xs">{info}</span>
+                    <span className="inline-block max-w-[80%] rounded-full bg-white/80 dark:bg-card/90 dark:text-muted-foreground px-3 py-1 shadow-xs border border-transparent dark:border-border/50">{info}</span>
                   </div>
                 );
               const mine = m.fromUid === accountId;
@@ -323,10 +323,10 @@ export function Conversation({
                 <div
                   key={m.msgId}
                   id={`msg-${m.msgId}`}
-                  className={cn("mt-1 flex gap-2 rounded-lg transition-colors", mine && "justify-end", jumpTo === m.msgId && "bg-amber-100", selected && "cursor-pointer")}
+                  className={cn("mt-1 flex gap-2 rounded-lg transition-colors", mine && "justify-end", jumpTo === m.msgId && "bg-amber-100 dark:bg-amber-500/20", selected && "cursor-pointer")}
                   onClick={selected && m.msgType !== "chat.undo" ? () => toggleSelected(m.msgId) : undefined}
                 >
-                  {selected && <Checkbox className="mt-3 bg-white" disabled={m.msgType === "chat.undo"} checked={selected.includes(m.msgId)} />}
+                  {selected && <Checkbox className="mt-3 bg-white dark:bg-card" disabled={m.msgType === "chat.undo"} checked={selected.includes(m.msgId)} />}
                   {!mine && (
                     <div className="w-8 shrink-0">
                       {first && (
@@ -342,10 +342,10 @@ export function Conversation({
                       <div
                         className={cn(
                           // wrap-anywhere: long file names and URLs break instead of pushing the bubble past its 65%
-                          "rounded-[10px] bg-white px-3 py-2 shadow-xs wrap-anywhere",
-                          mine && "bg-blue-100",
-                          mentioned && "ring-2 ring-amber-300",
-                          m.msgType === "chat.sticker" && "bg-transparent p-0 shadow-none",
+                          "rounded-[10px] bg-white px-3 py-2 shadow-xs wrap-anywhere dark:bg-card dark:text-foreground dark:border dark:border-border/60",
+                          mine && "bg-blue-100 dark:bg-primary/20 dark:border-primary/30 dark:text-foreground",
+                          mentioned && "ring-2 ring-amber-300 dark:ring-amber-500/50",
+                          m.msgType === "chat.sticker" && "bg-transparent p-0 shadow-none dark:bg-transparent dark:border-0",
                         )}
                       >
                         {m.quote && (
@@ -370,7 +370,7 @@ export function Conversation({
                       {m.msgType !== "chat.undo" && online && !selected && (
                         <div
                           className={cn(
-                            "absolute -top-7.5 z-1 hidden items-center gap-0.5 rounded-lg border bg-white p-0.5 whitespace-nowrap shadow-sm group-hover/bubble:flex has-data-[state=open]:flex",
+                            "absolute -top-7.5 z-1 hidden items-center gap-0.5 rounded-lg border bg-white p-0.5 whitespace-nowrap shadow-sm group-hover/bubble:flex has-data-[state=open]:flex dark:bg-popover dark:border-border/80",
                             mine ? "right-0" : "left-0",
                           )}
                         >
@@ -459,7 +459,7 @@ export function Conversation({
                       // positioned so it paints over the (positioned) bubble it overlaps
                       <div className="relative -mt-1.5 flex gap-1 text-xs">
                         {m.reactions.map((r) => (
-                          <span key={r.icon} className={cn("rounded-full border bg-white px-1.5", r.mine && "border-primary")}>
+                          <span key={r.icon} className={cn("rounded-full border bg-white dark:bg-card dark:border-border/80 px-1.5 shadow-2xs", r.mine && "border-primary")}>
                             {REACTIONS[r.icon] ?? r.icon} {r.count}
                           </span>
                         ))}

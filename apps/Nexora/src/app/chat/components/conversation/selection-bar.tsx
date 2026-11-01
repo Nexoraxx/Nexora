@@ -64,10 +64,10 @@ export function SelectionBar({
       <span className="flex-1">
         <b>{rows.length}</b> Đã chọn
       </span>
-      <Button variant="outline" className="bg-white/60" disabled={!rows.length} onClick={() => onCopy(rows)}>
+      <Button variant="outline" className="bg-white/60 dark:bg-card/70" disabled={!rows.length} onClick={() => onCopy(rows)}>
         Sao chép
       </Button>
-      <Button variant="outline" className="bg-white/60" disabled={!canRecall} title={canRecall ? undefined : "Chỉ thu hồi được tin nhắn của bạn"} onClick={() => setConfirm("undo")}>
+      <Button variant="outline" className="bg-white/60 dark:bg-card/70" disabled={!canRecall} title={canRecall ? undefined : "Chỉ thu hồi được tin nhắn của bạn"} onClick={() => setConfirm("undo")}>
         Thu hồi
       </Button>
       <Button variant="destructive" disabled={!rows.length || !online} onClick={() => setConfirm("delete")}>

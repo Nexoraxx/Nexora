@@ -52,7 +52,7 @@ export function GlassBar({ className, onHeight, children }: { className: string;
         aberrationIntensity={1}
       >
         {/* the library hard-codes 500 20px/1 system-ui and a text shadow on its content */}
-        <div ref={content} className="bg-white/40 font-sans text-sm/[1.45] font-normal text-foreground [text-shadow:none]">
+        <div ref={content} className="bg-white/40 dark:bg-card/60 font-sans text-sm/[1.45] font-normal text-foreground [text-shadow:none]">
           {children}
         </div>
       </LiquidGlass>

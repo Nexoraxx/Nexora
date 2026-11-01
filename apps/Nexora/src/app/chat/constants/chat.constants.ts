@@ -1,6 +1,6 @@
 import type { ConversationSettings } from "@/shared/types";
 
-export const QUOTE = "mb-1 rounded border-l-3 border-primary bg-primary/5 px-2 py-0.5 text-xs text-gray-700";
+export const QUOTE = "mb-1 rounded border-l-3 border-primary bg-primary/8 px-2 py-0.5 text-xs text-foreground/80";
 
 // end-to-end encrypted (Signal) messages, which Nexora can't read: no Signal keys of its own as PC registers
 export const E2EE = "chat.e2ee";
