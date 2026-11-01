@@ -3,6 +3,8 @@ mod models;
 mod services;
 mod ui;
 mod utils;
+#[cfg(target_os = "linux")]
+pub mod zcall;
 
 use tauri::{Manager, WindowEvent};
 

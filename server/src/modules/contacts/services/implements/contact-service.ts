@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception'
 import { FriendEventType, ReportReason, ThreadType, ZaloApiError, type API, type FriendEvent, type GroupInfoResponse } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
-import { zaloGet } from '../../../../third-party/zalo/post'
+import { zaloGet, zaloPost } from '../../../../third-party/zalo/post'
 import type { GroupMember, GroupDetails, BlockedUser, UserProfile } from '../../dtos/responses/contact.response'
 import type IContactRepository from '../../repositories/interfaces/contact-repository'
 import type ISettingsService from '../../../settings/services/interfaces/settings-service'
@@ -112,7 +112,10 @@ export default class ContactService implements IContactService {
     const known = (list: string[]) => new Map(this.contacts.members(accountId, list).map((u) => [u.userId, u]))
     const missing = ((have) => ids.filter((id) => !have.get(id)?.name))(known(ids))
     for (let i = 0; i < missing.length; i += MEMBER_BATCH) {
-      const { profiles } = await api.getGroupMembersInfo(missing.slice(i, i + MEMBER_BATCH))
+      // PC's getMemberInGroup POSTs: zca's getGroupMembersInfo GETs, and 100 encrypted ids in the URL plus the
+      // cookies are more header than Zalo takes (431)
+      const friend_pversion_map = missing.slice(i, i + MEMBER_BATCH).map((id) => `${id}_0`)
+      const { profiles } = await zaloPost<{ profiles: Record<string, { id?: string; displayName: string; zaloName: string; avatar: string }> }>(api, 'profile', '/api/social/group/members', { friend_pversion_map })
       this.contacts.upsertUsers(Object.entries(profiles).map(([id, p]) => ({ accountId, userId: p.id || id.split('_')[0], displayName: p.displayName, zaloName: p.zaloName, avatar: p.avatar })))
     }
     const users = known(ids)

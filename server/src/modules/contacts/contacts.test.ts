@@ -98,18 +98,25 @@ test('group details: owner, deputies, then members by name; only unknown members
   const db = openDatabase(':memory:')
   db.run(`INSERT INTO account (id, name, imei, cookie, userAgent, createdAt) VALUES ('me', 'me', 'i', '[]', 'ua', 1)`)
   db.run(`INSERT INTO user (accountId, userId, displayName, alias, isFr) VALUES ('me', 'b', 'Bình', 'Bình béo', 1), ('me', 'me', 'Tôi', NULL, 0)`)
-  const getGroupMembersInfo = mock(async (ids: string[]) => ({ profiles: Object.fromEntries(ids.map((id) => [id, { id, displayName: id.toUpperCase(), zaloName: id, avatar: '' }])) }))
+  // PC's getMemberInGroup: POST /api/social/group/members { friend_pversion_map: ["<id>_0"] }
+  const nexoraPost = mock(async ({ url, params }: { url: string; params: { friend_pversion_map: string[] } }) => {
+    expect(url).toBe('https://profile/api/social/group/members')
+    const ids = params.friend_pversion_map.map((v) => v.replace(/_0$/, ''))
+    return { profiles: Object.fromEntries(ids.map((id) => [`${id}_0`, { id, displayName: id.toUpperCase(), zaloName: id, avatar: '' }])) }
+  })
+  const fetched = () => nexoraPost.mock.calls.map(([{ params }]) => params.friend_pversion_map.map((v) => v.replace(/_0$/, '')))
   const api = {
     getGroupInfo: async () => ({
       gridInfoMap: { g1: { groupId: 'g1', name: 'Nhóm', avt: '', desc: '', totalMember: 4, creatorId: 'z', adminIds: ['c'], memVerList: ['me_1', 'b_2', 'c_3', 'z_4'], memberIds: [], setting: { blockName: 1 } } },
     }),
-    getGroupMembersInfo,
+    zpwServiceMap: { profile: ['https://profile'] },
+    nexoraPost,
   }
   const zca = Object.assign(new EventEmitter(), { get: () => api }) as unknown as ZcaService
   const contacts = new ContactService(new ContactRepository(db), zca, new SettingsService(zca))
 
   const g = await contacts.group('me', 'g1')
-  expect(getGroupMembersInfo.mock.calls).toEqual([[['c', 'z']]])
+  expect(fetched()).toEqual([['c', 'z']])
   expect(g.members.map((m) => [m.name, m.role])).toEqual([
     ['Z', 'owner'],
     ['C', 'admin'],
@@ -123,13 +130,20 @@ test('group details: owner, deputies, then members by name; only unknown members
 test('locked member list (lockViewMember, not owner/deputy): only owner, deputies and self, nobody else fetched', async () => {
   const db = openDatabase(':memory:')
   db.run(`INSERT INTO account (id, name, imei, cookie, userAgent, createdAt) VALUES ('me', 'me', 'i', '[]', 'ua', 1)`)
-  const getGroupMembersInfo = mock(async (ids: string[]) => ({ profiles: Object.fromEntries(ids.map((id) => [id, { id, displayName: id.toUpperCase(), zaloName: id, avatar: '' }])) }))
+  // PC's getMemberInGroup: POST /api/social/group/members { friend_pversion_map: ["<id>_0"] }
+  const nexoraPost = mock(async ({ url, params }: { url: string; params: { friend_pversion_map: string[] } }) => {
+    expect(url).toBe('https://profile/api/social/group/members')
+    const ids = params.friend_pversion_map.map((v) => v.replace(/_0$/, ''))
+    return { profiles: Object.fromEntries(ids.map((id) => [`${id}_0`, { id, displayName: id.toUpperCase(), zaloName: id, avatar: '' }])) }
+  })
+  const fetched = () => nexoraPost.mock.calls.map(([{ params }]) => params.friend_pversion_map.map((v) => v.replace(/_0$/, '')))
   let adminIds = ['c']
   const api = {
     getGroupInfo: async () => ({
       gridInfoMap: { g1: { groupId: 'g1', name: 'Nhóm', avt: '', totalMember: 5, creatorId: 'z', adminIds, memVerList: ['me_1', 'b_2', 'c_3', 'z_4', 'x_5'], memberIds: [], setting: { lockViewMember: 1 } } },
     }),
-    getGroupMembersInfo,
+    zpwServiceMap: { profile: ['https://profile'] },
+    nexoraPost,
   }
   const zca = Object.assign(new EventEmitter(), { get: () => api }) as unknown as ZcaService
   const contacts = new ContactService(new ContactRepository(db), zca, new SettingsService(zca))
@@ -138,7 +152,7 @@ test('locked member list (lockViewMember, not owner/deputy): only owner, deputie
   expect(g.locked).toBe(true)
   expect(g.totalMember).toBe(5)
   expect(g.members.map((m) => m.userId)).toEqual(['z', 'c', 'me'])
-  expect(getGroupMembersInfo.mock.calls.flat(2).sort()).toEqual(['c', 'me', 'z'])
+  expect(fetched().flat().sort()).toEqual(['c', 'me', 'z'])
 
   adminIds = ['me']
   expect((await contacts.group('me', 'g1')).members).toHaveLength(5)

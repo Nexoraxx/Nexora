@@ -34,6 +34,8 @@ import type IStickerService from './modules/stickers/services/interfaces/sticker
 import { todoRoutes } from './modules/todos'
 import type ITodoService from './modules/todos/services/interfaces/todo-service'
 import { Sync2Service } from './third-party/sync2/sync2-service'
+import { ZcallService } from './third-party/zcall/zcall-service'
+import { callRoutes } from './modules/calls'
 
 // resolve order = order services subscribe to Zalo events
 const container = createContainer()
@@ -52,6 +54,7 @@ const autoReplies = container.get<IAutoReplyService>(TOKENS.AutoReplyService)
 const todos = container.get<ITodoService>(TOKENS.TodoService)
 const bulkSends = container.get<IBulkSendService>(TOKENS.BulkSendService)
 const sync = container.get(Sync2Service)
+const calls = container.get(ZcallService)
 
 const app = new Hono()
 
@@ -75,6 +78,7 @@ app.route('/accounts/:accountId', quickMessageRoutes(quickMessages))
 app.route('/accounts/:accountId', autoReplyRoutes(autoReplies))
 app.route('/accounts/:accountId', todoRoutes(todos))
 app.route('/accounts/:accountId', bulkSendRoutes(bulkSends))
+app.route('/accounts/:accountId', callRoutes(calls))
 
 // idleTimeout (s): turning E2EE on waits up to 10 s for the peer's ack after its own socket round trips; Bun's default 10 s cuts it
 const server = Bun.serve({ hostname: '127.0.0.1', port: config.port, fetch: app.fetch, websocket, idleTimeout: 60 })

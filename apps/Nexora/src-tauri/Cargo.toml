@@ -25,6 +25,12 @@ zip = { version = "4", default-features = false, features = ["deflate-flate2-zli
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+# call engine (src/zcall): GStreamer bindings on the same glib 0.18 as gtk
+gstreamer = "0.21"
+gstreamer-app = "0.21"
+aes = "0.8"
+hmac = "0.12"
+sha1 = "0.10"
 
 [profile.release]
 codegen-units = 1

@@ -28,6 +28,8 @@ fn command() -> Command {
 pub fn spawn(data_dir: &Path) -> Server {
     let mut child = command()
         .env("DATA_DIR", data_dir)
+        // Linux call engine: the server runs this executable as `--zcall <recv> <send>` (src/zcall)
+        .env("NEXORA_APP_EXE", std::env::current_exe().unwrap_or_default())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
