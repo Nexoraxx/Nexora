@@ -20,6 +20,14 @@ function read(bar: string) {
     } catch {
       // a broken entry falls back to the defaults
     }
+    // Auto-migrate: if the saved view layout had bulk in menu by old default, promote it to bar
+    if (bar === "views" && layout?.place && layout.place["bulk"] === "menu") {
+      layout.place["bulk"] = "bar";
+      if (layout.place["starred"] === "bar") layout.place["starred"] = "menu";
+      try {
+        localStorage.setItem(storageKey(bar), JSON.stringify(layout));
+      } catch {}
+    }
     saved.set(bar, layout);
   }
   return saved.get(bar)!;

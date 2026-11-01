@@ -25,9 +25,9 @@ export const VIEW_BAR = "views";
 export const VIEW_TOOLS: Tool[] = [
   { id: "chat", label: "Tin nhắn", icon: MessageCircleIcon, place: "bar", places: ["bar", "menu"] },
   { id: "contacts", label: "Danh bạ", icon: BookUserIcon, place: "bar" },
-  { id: "starred", label: "Tin đánh dấu", icon: StarIcon, place: "bar" },
+  { id: "bulk", label: "Gửi hàng loạt", icon: SendIcon, place: "bar" },
   { id: "todos", label: "Công việc", icon: ListTodoIcon, place: "bar" },
-  { id: "bulk", label: "Gửi hàng loạt", icon: SendIcon, place: "menu" },
+  { id: "starred", label: "Tin đánh dấu", icon: StarIcon, place: "menu" },
 ];
 
 // the tools under the message box, in their default order and place

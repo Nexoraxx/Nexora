@@ -46,7 +46,7 @@ export function StickerSuggestions({ accountId, text, caret, onPick }: { account
 
   if (!stickers.length) return null;
   return (
-    <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border bg-white p-1 shadow-md">
+    <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border bg-white dark:bg-popover dark:border-border/80 p-1 shadow-md">
       {stickers.map((s) => (
         <StickerCell key={`${s.cateId}-${s.id}`} sticker={s} onClick={() => onPick(s)} />
       ))}

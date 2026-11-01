@@ -27,7 +27,7 @@ export function PinBar({ pins, onJump, onUnpin }: { pins: Pin[]; onJump: (msgId:
   if (!pins.length) return null;
   const shown = open ? pins : pins.slice(0, 1);
   return (
-    <div className="border-t border-black/5 px-4 py-1.5">
+    <div className="border-t border-black/5 dark:border-white/10 px-4 py-1.5">
       {open && (
         <div className="flex items-center justify-between pb-1 text-xs font-semibold">
           Danh sách ghim ({pins.length})
@@ -46,7 +46,7 @@ export function PinBar({ pins, onJump, onUnpin }: { pins: Pin[]; onJump: (msgId:
             </div>
           </button>
           {!open && pins.length > 1 ? (
-            <Button variant="outline" size="xs" className="bg-white/60" onClick={() => setOpen(true)}>
+            <Button variant="outline" size="xs" className="bg-white/60 dark:bg-card/70" onClick={() => setOpen(true)}>
               +{pins.length - 1} ghim
             </Button>
           ) : (

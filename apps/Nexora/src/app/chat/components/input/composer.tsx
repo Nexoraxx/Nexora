@@ -246,7 +246,7 @@ export function Composer({
   return (
     <div className="px-3 py-2">
       {quote && (
-        <div className="mb-1.5 flex items-center gap-2 border-l-3 border-primary bg-slate-50 px-2 py-1 text-[13px]">
+        <div className="mb-1.5 flex items-center gap-2 border-l-3 border-primary bg-slate-50 dark:bg-card/90 px-2 py-1 text-[13px] rounded-r-md">
           <div className="min-w-0 flex-1">
             Trả lời <b>{quote.dName}</b>: <RichText text={summary(quote.msgType, quote.content)} />
           </div>
@@ -269,7 +269,7 @@ export function Composer({
       {creating === "note" && groupId && <NoteEditor base={`/accounts/${accountId}/groups/${groupId}`} onClose={() => setCreating(undefined)} />}
       {creating === "reminder" && <ReminderEditor base={base} isGroup={!!groupId} onClose={() => setCreating(undefined)} />}
       {preview && !quote && (
-        <div className="mb-1.5 flex items-center gap-2 rounded-lg bg-white/80 p-1.5">
+        <div className="mb-1.5 flex items-center gap-2 rounded-lg bg-white/80 dark:bg-card/90 dark:border dark:border-border/60 p-1.5 shadow-xs">
           {preview.data === undefined ? (
             <span className="px-1 text-xs text-muted-foreground">Đang tải xem trước…</span>
           ) : preview.data ? (
@@ -304,7 +304,7 @@ export function Composer({
             <StickerSuggestions accountId={accountId} text={text} caret={caret} onPick={(s) => sendSticker(s, clearText)} />
             {quick && <QuickSuggestions items={quick} selected={quickPick} onPick={pickQuick} />}
             {suggestions.length > 0 && (
-              <div className="max-h-60 w-80 max-w-full overflow-y-auto rounded-lg border bg-white py-1 shadow-md">
+              <div className="max-h-60 w-80 max-w-full overflow-y-auto rounded-lg border bg-white dark:bg-popover dark:border-border/80 py-1 shadow-md">
                 {group?.locked && <p className="px-3 py-1 text-xs text-muted-foreground">Bạn chỉ có thể báo cho cả nhóm hoặc trưởng/phó nhóm.</p>}
                 {suggestions.map((s) => (
                   <button key={s.uid} className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-muted" onClick={() => pickMention(s)}>
@@ -353,7 +353,7 @@ export function Composer({
         <Textarea
           ref={input}
           rows={1}
-          className="max-h-30 min-h-8 min-w-40 flex-1 resize-none border-0 bg-white/60 py-1.5 [scrollbar-width:thin] focus-visible:bg-white/90 focus-visible:ring-0"
+          className="max-h-30 min-h-8 min-w-40 flex-1 resize-none border-0 bg-white/60 dark:bg-card/70 dark:text-foreground dark:focus-visible:bg-card/90 py-1.5 [scrollbar-width:thin] focus-visible:bg-white/90 focus-visible:ring-0"
           placeholder={ttl ? `Nhập tin nhắn tự xóa gửi đến ${name}` : "Nhập tin nhắn…"}
           value={text}
           onPaste={(e) => {

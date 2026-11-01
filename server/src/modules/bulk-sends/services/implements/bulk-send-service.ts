@@ -8,7 +8,7 @@ import type { CreateBulkSendRequest, PreviewRequest, TemplateRequest } from '../
 import type { Preview } from '../../dtos/responses/bulk-send.response'
 import type IBulkSendRepository from '../../repositories/interfaces/bulk-send-repository'
 import type IBulkSendService from '../interfaces/bulk-send-service'
-import { MIN_GAP, MAX_GAP, MAX_FAILS, RESTARTED, NOT_FOUND, BUSY } from '../../constants/bulk-send.constant'
+import { SPEEDS, type Speed, MAX_FAILS, RESTARTED, NOT_FOUND, BUSY } from '../../constants/bulk-send.constant'
 import { notSent, describe } from '../../helpers/bulk-send.helper'
 import { missingIn, render, valuesOf } from '../../helpers/template.helper'
 
@@ -20,7 +20,10 @@ export default class BulkSendService implements IBulkSendService {
   private looping = new Set<number>()
   // tests swap these
   sleep = (ms: number) => Bun.sleep(ms)
-  gap = () => MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP)
+  gap = (speed: Speed = 'normal') => {
+    const s = SPEEDS[speed] ?? SPEEDS.normal
+    return s.minGap + Math.random() * (s.maxGap - s.minGap)
+  }
 
   constructor(
     @inject(TOKENS.BulkSendRepository) private repo: IBulkSendRepository,
@@ -64,9 +67,9 @@ export default class BulkSendService implements IBulkSendService {
     return { items, missing }
   }
 
-  create(accountId: string, { name, body, userIds }: CreateBulkSendRequest) {
+  create(accountId: string, { name, body, userIds, speed }: CreateBulkSendRequest) {
     if (this.repo.runningOther(accountId)) throw new HTTPException(409, { message: BUSY })
-    const id = this.repo.create(accountId, name, this.fill(accountId, body, userIds).map(({ friend, text }) => ({ userId: friend.userId, text })))
+    const id = this.repo.create(accountId, name, this.fill(accountId, body, userIds).map(({ friend, text }) => ({ userId: friend.userId, text })), speed)
     this.changed(accountId)
     void this.loop(id)
     return { id }
@@ -146,7 +149,10 @@ export default class BulkSendService implements IBulkSendService {
           }
         }
         this.changed(accountId)
-        if (this.repo.next(id)) await this.sleep(this.gap())
+        if (this.repo.next(id)) {
+          const run = this.repo.state(id)
+          await this.sleep(this.gap(run?.speed))
+        }
       }
     } finally {
       this.looping.delete(id)

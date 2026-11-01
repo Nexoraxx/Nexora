@@ -92,15 +92,15 @@ export function VariableTextarea({ value, onChange, rows = 6, autoFocus }: { val
         }}
       />
       {options.length > 0 && (
-        <div className="absolute z-50 rounded-lg border bg-popover p-1 shadow-md" style={{ top: xy.top, left: xy.left, width: POPUP_W }}>
+        <div className="absolute z-50 rounded-xl border border-border/80 bg-popover/95 backdrop-blur-xs p-1 shadow-lg" style={{ top: xy.top, left: xy.left, width: POPUP_W }}>
           {options.map((v, i) => (
             <button
               key={v.key}
-              className={cn("flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left", i === sel && "bg-muted")}
+              className={cn("flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors cursor-pointer", i === sel ? "bg-primary/10 text-primary" : "hover:bg-muted/70")}
               // keep the caret in the box
               onMouseDown={(e) => (e.preventDefault(), accept(v.key))}
             >
-              <code className="text-violet-700">{v.key}</code>
+              <code className="font-mono text-xs font-semibold text-primary">{`{{${v.key}}}`}</code>
               <span className="truncate text-xs text-muted-foreground">
                 {v.label} · {v.example}
               </span>
@@ -113,8 +113,9 @@ export function VariableTextarea({ value, onChange, rows = 6, autoFocus }: { val
         {VARIABLES.map((v) => (
           <button
             key={v.key}
+            type="button"
             title={`${v.label} · ví dụ: ${v.example}`}
-            className="rounded bg-violet-100 px-1.5 font-mono text-xs leading-5 text-violet-700 hover:bg-violet-200"
+            className="rounded-md bg-muted/80 hover:bg-muted text-foreground border border-border/60 hover:border-border font-mono text-xs px-2 py-0.5 transition-colors cursor-pointer"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => put(v.key, ref.current?.selectionStart ?? value.length, ref.current?.selectionEnd ?? value.length)}
           >
@@ -122,7 +123,7 @@ export function VariableTextarea({ value, onChange, rows = 6, autoFocus }: { val
           </button>
         ))}
       </div>
-      {bad.length > 0 && <p className="mt-1 text-xs text-red-600">Không có biến {bad.map((k) => `{{${k}}}`).join(", ")}</p>}
+      {bad.length > 0 && <p className="mt-1 text-xs text-destructive">Không có biến {bad.map((k) => `{{${k}}}`).join(", ")}</p>}
     </div>
   );
 }

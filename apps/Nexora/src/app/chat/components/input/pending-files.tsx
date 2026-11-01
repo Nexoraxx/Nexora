@@ -8,13 +8,13 @@ export function PendingFiles({ files, onRemove }: { files: File[]; onRemove: (f:
   const urls = useMemo(() => files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null)), [files]);
   useEffect(() => () => urls.forEach((u) => u && URL.revokeObjectURL(u)), [urls]);
   return (
-    <div className="mb-1.5 flex flex-wrap gap-2 rounded-lg bg-white/80 p-1.5">
+    <div className="mb-1.5 flex flex-wrap gap-2 rounded-lg bg-white/80 dark:bg-card/90 dark:border dark:border-border/60 p-1.5 shadow-xs">
       {files.map((f, i) => (
         <div key={i} className="relative">
           {urls[i] ? (
             <img className="size-16 rounded object-cover" src={urls[i]!} alt={f.name} />
           ) : (
-            <div className="flex h-16 w-32 items-center gap-1.5 rounded border bg-white px-2 text-xs">
+            <div className="flex h-16 w-32 items-center gap-1.5 rounded border bg-white dark:bg-card dark:border-border/60 px-2 text-xs">
               <FileTextIcon className="size-4 shrink-0" />
               <span className="line-clamp-2 break-all">{f.name}</span>
             </div>

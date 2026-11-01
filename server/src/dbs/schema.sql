@@ -420,6 +420,7 @@ CREATE TABLE IF NOT EXISTS bulk_send (
   name TEXT NOT NULL,
   state TEXT NOT NULL CHECK (state IN ('running', 'paused', 'done', 'cancelled')),
   pauseReason TEXT,
+  speed TEXT NOT NULL DEFAULT 'normal',
   createdAt INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS bulk_send_account ON bulk_send (accountId, createdAt);
