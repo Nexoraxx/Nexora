@@ -154,3 +154,15 @@ test('restart: a running run pauses, the send in flight becomes unknown and is n
   db.run(`DELETE FROM account WHERE id = 'me'`)
   expect(repo.recipients(id)).toEqual([])
 })
+
+test('speed: fast/normal/safe presets determine gaps and persist with the run', () => {
+  const { repo, make } = setup()
+  const bulk = make()
+  expect(bulk.gap('fast')).toBeGreaterThanOrEqual(3000)
+  expect(bulk.gap('fast')).toBeLessThanOrEqual(6000)
+  expect(bulk.gap('safe')).toBeGreaterThanOrEqual(15000)
+  expect(bulk.gap('safe')).toBeLessThanOrEqual(30000)
+
+  const { id } = bulk.create('me', { name: 'fast run', body: 'Hi', userIds: ['a'], speed: 'fast' })
+  expect(repo.state(id)?.speed).toBe('fast')
+})
