@@ -1,3 +1,4 @@
+import type { Speed } from '../../constants/bulk-send.constant'
 import type { BulkSend, BulkSendState, BulkTemplate, Recipient, RecipientState } from '../../dtos/responses/bulk-send.response'
 import type { Friend, Next } from '../../models/bulk-send.model'
 
@@ -14,10 +15,10 @@ export default interface IBulkSendRepository {
 
   sends(accountId: string): BulkSend[]
   send(accountId: string, id: number): BulkSend | null
-  state(id: number): { accountId: string; state: BulkSendState } | null
+  state(id: number): { accountId: string; state: BulkSendState; speed: Speed } | null
   // another of this account's runs that is going now
   runningOther(accountId: string, id?: number): boolean
-  create(accountId: string, name: string, recipients: { userId: string; text: string }[]): number
+  create(accountId: string, name: string, recipients: { userId: string; text: string }[], speed?: Speed): number
   recipients(sendId: number): Recipient[]
   setState(id: number, state: BulkSendState, pauseReason?: string | null): void
   // the next one in line of a running run, else null

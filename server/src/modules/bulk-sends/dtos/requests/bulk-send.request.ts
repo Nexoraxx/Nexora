@@ -16,8 +16,14 @@ const Body = z
 export const TemplateRequest = z.object({ name: z.string().trim().min(1, 'Nhập tên mẫu').max(60), body: Body })
 export type TemplateRequest = z.infer<typeof TemplateRequest>
 
+export const SpeedEnum = z.enum(['fast', 'normal', 'safe'])
+export type Speed = z.infer<typeof SpeedEnum>
+
 export const PreviewRequest = z.object({ body: Body, userIds: z.array(z.string()).min(1, 'Chọn ít nhất một người nhận') })
 export type PreviewRequest = z.infer<typeof PreviewRequest>
 // name: the template's, shown in the list of runs
-export const CreateBulkSendRequest = PreviewRequest.extend({ name: z.string().trim().min(1).max(60) })
+export const CreateBulkSendRequest = PreviewRequest.extend({
+  name: z.string().trim().min(1).max(60),
+  speed: SpeedEnum.optional().default('normal'),
+})
 export type CreateBulkSendRequest = z.infer<typeof CreateBulkSendRequest>

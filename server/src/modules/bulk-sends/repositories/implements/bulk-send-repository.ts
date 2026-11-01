@@ -1,6 +1,7 @@
 import { inject, injectable } from 'inversify'
 import { Database } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
+import type { Speed } from '../../constants/bulk-send.constant'
 import type { BulkSend, BulkSendState, BulkTemplate, Recipient, RecipientState } from '../../dtos/responses/bulk-send.response'
 import type IBulkSendRepository from '../interfaces/bulk-send-repository'
 import type { Friend, Next } from '../../models/bulk-send.model'
@@ -12,7 +13,11 @@ const SEND = `SELECT s.id, s.accountId, s.name, s.state, s.pauseReason, s.create
 
 @injectable()
 export default class BulkSendRepository implements IBulkSendRepository {
-  constructor(@inject(TOKENS.Database) private db: Database) {}
+  constructor(@inject(TOKENS.Database) private db: Database) {
+    try {
+      this.db.run(`ALTER TABLE bulk_send ADD COLUMN speed TEXT NOT NULL DEFAULT 'normal'`)
+    } catch {}
+  }
 
   templates() {
     return this.db.query<BulkTemplate, []>(`SELECT id, name, body, updatedAt FROM bulk_template ORDER BY updatedAt DESC`).all()
@@ -53,17 +58,17 @@ export default class BulkSendRepository implements IBulkSendRepository {
   }
 
   state(id: number) {
-    return this.db.query<{ accountId: string; state: BulkSendState }, [number]>(`SELECT accountId, state FROM bulk_send WHERE id = ?`).get(id)
+    return this.db.query<{ accountId: string; state: BulkSendState; speed: Speed }, [number]>(`SELECT accountId, state, COALESCE(speed, 'normal') AS speed FROM bulk_send WHERE id = ?`).get(id)
   }
 
   runningOther(accountId: string, id = -1) {
     return !!this.db.query(`SELECT 1 FROM bulk_send WHERE accountId = ? AND state = 'running' AND id <> ?`).get(accountId, id)
   }
 
-  create(accountId: string, name: string, recipients: { userId: string; text: string }[]) {
+  create(accountId: string, name: string, recipients: { userId: string; text: string }[], speed: Speed = 'normal') {
     return this.db.transaction(() => {
       const id = Number(
-        this.db.query(`INSERT INTO bulk_send (accountId, name, state, createdAt) VALUES (?, ?, 'running', ?)`).run(accountId, name, Date.now()).lastInsertRowid,
+        this.db.query(`INSERT INTO bulk_send (accountId, name, state, speed, createdAt) VALUES (?, ?, 'running', ?, ?)`).run(accountId, name, speed, Date.now()).lastInsertRowid,
       )
       const add = this.db.query(`INSERT INTO bulk_send_recipient (sendId, userId, seq, text) VALUES (?, ?, ?, ?)`)
       recipients.forEach((r, i) => add.run(id, r.userId, i, r.text))
