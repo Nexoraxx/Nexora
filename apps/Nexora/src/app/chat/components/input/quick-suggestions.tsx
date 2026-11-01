@@ -5,7 +5,7 @@ import { Img } from "@/shared/components/img";
 // PC's suggestion box: shown for any "/word" while the feature has items, even with no match
 export function QuickSuggestions({ items, selected, onPick }: { items: QuickMessage[]; selected: number; onPick: (q: QuickMessage) => void }) {
   return (
-    <div className="max-h-60 w-96 max-w-full overflow-y-auto rounded-lg border bg-white py-1 shadow-md">
+    <div className="max-h-60 w-96 max-w-full overflow-y-auto rounded-lg border bg-white dark:bg-popover dark:border-border/80 py-1 shadow-md">
       <p className="px-3 py-1 text-xs font-semibold text-muted-foreground">Tin nhắn nhanh</p>
       {!items.length && <p className="px-3 py-1.5 text-xs text-muted-foreground">Không có tin nhắn nhanh phù hợp. Vui lòng thử từ khóa khác</p>}
       {items.map((q, i) => (

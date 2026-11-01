@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NO_SETTINGS } from "@/app/chat/constants/chat.constants";
 import { api } from "@/core/http/api";
-import type { Account, ChatTarget, ConversationSettings, MyCloud, Thread } from "@/shared/types";
+import type { Account, ChatTarget, ConversationSettings, MessageRow, MyCloud, Thread } from "@/shared/types";
 import { Avatar } from "@/app/profile/components/avatar/user-avatar";
 import { ConversationMenuItems } from "@/app/chat/components/thread/conversation-menu-items";
 import { DeleteDialog } from "@/app/chat/components/dialogs/delete-dialog";
@@ -12,7 +12,7 @@ import { RichText } from "@/app/chat/components/message/rich-text";
 import { GlobalSearch } from "@/app/chat/components/search/global-search";
 import { labelOf, time, summary } from "@/app/chat/utils/chat.utils";
 import { Conversation } from "@/app/chat/components/conversation/conversation";
-import { BellOffIcon, ChevronDownIcon, EllipsisIcon, ListFilterIcon, LockIcon, MessagesSquareIcon, PinIcon } from "lucide-react";
+import { BellOffIcon, ChevronDownIcon, EllipsisIcon, ListFilterIcon, LockIcon, MessagesSquareIcon, PinIcon, StarIcon } from "lucide-react";
 import { accountTag } from "@/shared/components/account-tag";
 import { ErrorBanner } from "@/shared/components/error-banner";
 import { SearchInput } from "@/shared/components/search-input";
@@ -22,8 +22,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { cn } from "@/shared/utils/shadcn";
 import { fold } from "@/shared/utils/text.utils";
 
-// Zalo PC's conversation list filters: everything, "Chưa đọc", or one "Phân loại"
-type ListFilter = "all" | "unread" | number;
+// Zalo PC's conversation list filters: everything, "Chưa đọc", "Tin đánh dấu", or one "Phân loại"
+type ListFilter = "all" | "unread" | "starred" | number;
 // a conversation of one of the shown accounts
 type Row = Thread & { accountId: string };
 
@@ -69,6 +69,18 @@ export function Chat({
   // "Ưu tiên" / "Khác" and the list filter
   const [section, setSection] = useState<"priority" | "other">("priority");
   const [filter, setFilter] = useState<ListFilter>("all");
+  const [starredRows, setStarredRows] = useState<(MessageRow & { starredAt: number })[]>();
+  const [loadingStarred, setLoadingStarred] = useState(false);
+
+  useEffect(() => {
+    if (filter !== "starred") return;
+    setLoadingStarred(true);
+    const ids = accounts.map((a) => a.id);
+    Promise.all(ids.map((id) => api<(MessageRow & { starredAt: number })[]>(`/accounts/${id}/starred`).catch(() => [])))
+      .then((lists) => setStarredRows(lists.flat().sort((a, b) => b.starredAt - a.starredAt)))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoadingStarred(false));
+  }, [filter, accounts.map((a) => a.id).join()]);
   // the row whose menu is open (its "…" button or a right click), as "account:thread"
   const [menuFor, setMenuFor] = useState<string>();
   const [dialog, setDialog] = useState<{ kind: "hide" | "delete" | "labels" | "hiddenSettings"; thread?: Row }>();
@@ -137,38 +149,121 @@ export function Chat({
         ) : (
           <>
             {!searching && (
-              <div className="flex items-center gap-3 border-b px-3">
+              <div className="flex items-center gap-2 border-b px-3 h-10 shrink-0">
                 {tab("priority", "Ưu tiên")}
                 {tab("other", "Khác")}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="xs" className={cn("ml-auto text-muted-foreground", filter !== "all" && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary")}>
-                      <ListFilterIcon />
-                      <span className="max-w-24 truncate">{filter === "unread" ? "Chưa đọc" : (label?.text ?? (all ? "Tất cả" : "Phân loại"))}</span>
-                      <ChevronDownIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56">
-                    <DropdownMenuItem onSelect={() => setFilter("all")}>Tất cả</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setFilter("unread")}>Chưa đọc</DropdownMenuItem>
-                    {!all && (
-                      <>
-                        <DropdownMenuSeparator />
-                        {settingsOf(accounts[0].id).labels.map((l) => (
-                          <DropdownMenuItem key={l.id} onSelect={() => setFilter(l.id)}>
-                            <span className="size-3 shrink-0 rounded-sm" style={{ background: l.color }} /> <span className="truncate">{l.text}</span>
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuItem onSelect={() => setDialog({ kind: "labels" })}>Quản lý thẻ phân loại</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={() => setDialog({ kind: "hiddenSettings" })}>Thiết lập ẩn trò chuyện</DropdownMenuItem>
-                      </>
+                <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    title={filter === "starred" ? "Quay lại danh sách hội thoại" : "Tin đánh dấu"}
+                    className={cn(
+                      "size-7 rounded-lg text-muted-foreground transition-colors cursor-pointer",
+                      filter === "starred" && "bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 hover:text-amber-600"
                     )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    onClick={() => setFilter((f) => (f === "starred" ? "all" : "starred"))}
+                  >
+                    <StarIcon className={cn("size-3.5", filter === "starred" && "fill-amber-500 text-amber-500")} />
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="xs" className={cn("text-muted-foreground", filter !== "all" && filter !== "starred" && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary")}>
+                        <ListFilterIcon />
+                        <span className="max-w-24 truncate">
+                          {filter === "unread"
+                            ? "Chưa đọc"
+                            : filter === "starred"
+                            ? "Đánh dấu"
+                            : (label?.text ?? (all ? "Tất cả" : "Phân loại"))}
+                        </span>
+                        <ChevronDownIcon />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-56">
+                      <DropdownMenuItem onSelect={() => setFilter("all")}>Tất cả</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setFilter("unread")}>Chưa đọc</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setFilter("starred")} className="flex items-center gap-2">
+                        <StarIcon className="size-3.5 text-amber-500 fill-amber-500" />
+                        <span>Tin đánh dấu</span>
+                      </DropdownMenuItem>
+                      {!all && (
+                        <>
+                          <DropdownMenuSeparator />
+                          {settingsOf(accounts[0].id).labels.map((l) => (
+                            <DropdownMenuItem key={l.id} onSelect={() => setFilter(l.id)}>
+                              <span className="size-3 shrink-0 rounded-sm" style={{ background: l.color }} /> <span className="truncate">{l.text}</span>
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuItem onSelect={() => setDialog({ kind: "labels" })}>Quản lý thẻ phân loại</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => setDialog({ kind: "hiddenSettings" })}>Thiết lập ẩn trò chuyện</DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
             )}
-            <div className="flex-1 overflow-y-auto px-1.5 py-1.5">
+            {filter === "starred" ? (
+              <div className="flex-1 overflow-y-auto px-1.5 py-1.5 space-y-1">
+                {loadingStarred ? (
+                  <div className="py-14 text-center text-xs text-muted-foreground">
+                    Đang tải tin đánh dấu...
+                  </div>
+                ) : starredRows && starredRows.length === 0 ? (
+                  <div className="py-14 px-4 text-center text-xs text-muted-foreground">
+                    <StarIcon className="size-8 mx-auto mb-2 text-amber-500/30 stroke-[1.5]" />
+                    <p className="font-medium text-foreground">Chưa có tin nhắn nào được đánh dấu</p>
+                    <p className="text-[11px] mt-1 text-muted-foreground/80">Đánh dấu sao các tin quan trọng để xem lại nhanh tại đây.</p>
+                  </div>
+                ) : (
+                  starredRows?.map((m) => {
+                    const threadList = threads[m.accountId] ?? [];
+                    const t = threadList.find((x) => x.threadId === m.threadId);
+                    const isCurrent = target?.threadId === m.threadId && targetAccount === m.accountId && target?.msgId === m.msgId;
+                    return (
+                      <button
+                        key={`${m.accountId}:${m.msgId}`}
+                        type="button"
+                        onClick={() =>
+                          onOpen({
+                            threadId: m.threadId,
+                            isGroup: !!t?.isGroup,
+                            name: t?.name ?? null,
+                            avatar: t?.avatar ?? null,
+                            msgId: m.msgId,
+                            accountId: m.accountId,
+                          })
+                        }
+                        className={cn(
+                          "w-full flex items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-all hover:bg-muted/60 active:scale-[0.99] cursor-pointer border border-transparent",
+                          isCurrent ? "bg-primary/10 border-primary/20 shadow-xs" : "hover:border-border/60"
+                        )}
+                      >
+                        <Avatar src={t?.avatar} name={t?.name ?? "?"} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="truncate font-semibold text-xs text-foreground">{t?.name ?? m.threadId}</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <StarIcon className="size-3 text-amber-500 fill-amber-500" />
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                {new Date(m.sendDttm).toLocaleDateString("vi", { day: "2-digit", month: "2-digit" })}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground/80 mt-0.5">
+                            {m.fromUid === m.accountId ? "Bạn: " : m.dName ? `${m.dName}: ` : ""}
+                            <RichText text={summary(m.msgType, m.content)} />
+                          </p>
+                          {all && <div className="mt-1">{tagOf(m.accountId)}</div>}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto px-1.5 py-1.5">
               {shown.map((t) => {
                 const s = settingsOf(t.accountId);
                 const key = `${t.accountId}:${t.threadId}`;
@@ -246,6 +341,7 @@ export function Chat({
                 </p>
               )}
             </div>
+            )}
           </>
         )}
       </aside>

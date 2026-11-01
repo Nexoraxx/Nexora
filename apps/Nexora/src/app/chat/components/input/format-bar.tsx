@@ -27,7 +27,7 @@ export function FormatBar({ onApply }: { onApply: (code: string) => void }) {
     </Button>
   );
   return (
-    <div className="mb-1.5 flex flex-wrap items-center gap-0.5 rounded-lg bg-white/70 p-0.5">
+    <div className="mb-1.5 flex flex-wrap items-center gap-0.5 rounded-lg bg-white/70 dark:bg-card/80 dark:border dark:border-border/60 p-0.5">
       {tool("In đậm (Ctrl + B)", "b", <BoldIcon />)}
       {tool("In nghiêng (Ctrl + I)", "i", <ItalicIcon />)}
       {tool("Gạch chân (Ctrl + U)", "u", <UnderlineIcon />)}
