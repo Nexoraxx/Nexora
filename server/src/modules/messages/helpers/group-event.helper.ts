@@ -1,38 +1,9 @@
-import { GroupEventType, type GroupEvent, type GroupSetting, type TGroupEventBase } from '@hwqnq/zca-js'
-
-// Zalo PC's local system message for group events (MSG_GROUP_NOTI, -6 inside PC); not a Zalo msgType
-export const GROUP_NOTI = 'group.noti'
-
-// Events that change group state and that PC writes a system message for; board/topic/remind events carry no
-// message (PC skips them) and join requests only matter to the approval screen.
-export const GROUP_STATE_EVENTS = new Set<GroupEventType>([
-  GroupEventType.JOIN,
-  GroupEventType.LEAVE,
-  GroupEventType.REMOVE_MEMBER,
-  GroupEventType.BLOCK_MEMBER,
-  GroupEventType.UPDATE,
-  GroupEventType.UPDATE_AVATAR,
-  GroupEventType.UPDATE_SETTING,
-  GroupEventType.ADD_ADMIN,
-  GroupEventType.REMOVE_ADMIN,
-  GroupEventType.NEW_LINK,
-])
-
-export type GroupEventContext = {
-  me: string
-  // alias or display name known locally, as PC's getDName
-  name: (userId: string) => string | null | undefined
-  // group state before this event
-  setting?: Partial<GroupSetting> | null
-  creatorId?: string | null
-}
-
-const YOU = 'Bạn'
-const LOCK_VIEW = 'chỉ cho phép trưởng/phó nhóm xem đầy đủ danh sách thành viên.'
-const UNLOCK_VIEW = 'cho phép mọi người xem danh sách thành viên.'
+import { GroupEventType, type GroupEvent, type TGroupEventBase } from '@hwqnq/zca-js'
+import { GROUP_STATE_EVENTS, YOU, LOCK_VIEW, UNLOCK_VIEW } from '../constants/group-event.constant'
+import type { GroupEventContext } from '../models/group-event.model'
 
 // PC's deputy lists: "Bạn, An và 3 người khác"
-const few = (names: string[]) => (names.length > 2 ? `${names.slice(0, 2).join(', ')} và ${names.length - 2} người khác` : names.join(', '))
+export const few = (names: string[]) => (names.length > 2 ? `${names.slice(0, 2).join(', ')} và ${names.length - 2} người khác` : names.join(', '))
 
 // Zalo PC's text for a group control event (_processGroupCtrlEvents_old, strings from lang-vi); '' = no message.
 export function groupEventText(e: GroupEvent, { me, name, setting, creatorId }: GroupEventContext): string {

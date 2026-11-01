@@ -172,6 +172,9 @@ CREATE TABLE IF NOT EXISTS message (
   PRIMARY KEY (accountId, msgId)
 );
 CREATE INDEX IF NOT EXISTS message_thread ON message (accountId, toUid, sendDttm);
+CREATE INDEX IF NOT EXISTS message_thread_id ON message (accountId, toUid, CAST(msgId AS INTEGER));
+CREATE INDEX IF NOT EXISTS message_e2ee_untagged ON message (cmd) WHERE cmd IN (551, 552) AND msgType != 'chat.e2ee' AND e2eeStatus IS NOT 3000;
+CREATE INDEX IF NOT EXISTS message_e2ee_transport ON message (accountId) WHERE cmd IN (513, 713);
 CREATE INDEX IF NOT EXISTS message_cli ON message (accountId, cliMsgId);
 CREATE INDEX IF NOT EXISTS message_status ON message (accountId, status, sendDttm);
 -- replaces zalo image/file/link/utils_media: media panel = filter by msgType

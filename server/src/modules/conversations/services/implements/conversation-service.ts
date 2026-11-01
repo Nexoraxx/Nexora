@@ -1,7 +1,6 @@
-import { createHash } from 'node:crypto'
 import { inject, injectable } from 'inversify'
 import { HTTPException } from 'hono/http-exception'
-import { MuteAction, MuteDuration, ThreadType, type API, type ChatTTL, type LabelData } from '@hwqnq/zca-js'
+import { MuteAction, MuteDuration, type API, type ChatTTL, type LabelData } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { controlData, type Control } from '../../../../third-party/zalo/controls'
@@ -11,37 +10,9 @@ import { TOKENS } from '../../../../di/tokens'
 import type { ConversationSettings } from '../../dtos/responses/conversation.response'
 import type IConversationRepository from '../../repositories/interfaces/conversation-repository'
 import type IConversationService from '../interfaces/conversation-service'
-
-// Zalo PC: mark_unread.limit; labels.max_label
-const MAX_UNREAD_MARKS = 50
-const MAX_LABELS = 15
-const BAD_PIN = 'Mã PIN không đúng. Vui lòng thử lại.'
-
-// muted: until (ms) or -1 = until turned back on; ttl: "Tin nhắn tự xóa" (ms); unread: "Đánh dấu chưa đọc";
-// archived: in "Khác" instead of "Ưu tiên"; hidden: "Ẩn trò chuyện", pin = md5 of its 4-digit PIN ('' = none set)
-type State = {
-  pinned: Set<string>
-  muted: Map<string, number>
-  ttl: Map<string, number>
-  unread: Set<string>
-  archived: Set<string>
-  labels: LabelData[]
-  labelVersion: number
-  hidden: Set<string>
-  pin: string
-}
-
-const next8AM = () => {
-  const t = new Date()
-  if (t.getHours() >= 8) t.setDate(t.getDate() + 1)
-  return t.setHours(8, 0, 0, 0)
-}
-// Zalo prefixes conversation ids with u/g; thread ids here are bare
-const bare = (id: string) => id.replace(/^[ug]/, '')
-const type = (isGroup: boolean) => (isGroup ? ThreadType.Group : ThreadType.User)
-const md5 = (s: string) => createHash('md5').update(s).digest('hex')
-// ponytail: labels keep PC's own conversation ids ("g" + id for groups) as far as can be told; check against a real list
-const labelKey = (threadId: string, isGroup: boolean) => (isGroup ? `g${threadId}` : threadId)
+import { MAX_UNREAD_MARKS, MAX_LABELS, BAD_PIN } from '../../constants/conversation.constant'
+import type { State } from '../../models/conversation.model'
+import { next8AM, bare, type, md5, labelKey } from '../../helpers/conversation.helper'
 
 // Zalo PC's per-conversation settings: "Ghim hội thoại", "Tắt thông báo", "Tin nhắn tự xóa", "Đánh dấu chưa đọc",
 // "Ưu tiên" / "Khác", "Phân loại" and "Ẩn trò chuyện"; loaded when an account connects and kept in memory, changes

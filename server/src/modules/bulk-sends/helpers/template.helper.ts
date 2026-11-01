@@ -1,14 +1,7 @@
-// {{variable}} templates of "Gửi hàng loạt". Keys are English; the editor shows them with Vietnamese labels
-// (apps/Nexora/src/app/bulk-send/constants/bulk-send.constants.ts keeps the same list).
-export const VARIABLES = ['name', 'alias', 'pronoun', 'phone', 'me'] as const
-export type Variable = (typeof VARIABLES)[number]
+import { VARIABLES, PATTERN, FALLBACK } from '../constants/template.constant'
+import type { Variable, Person } from '../models/template.model'
 
-// spaces inside the braces are fine: {{ name }} = {{name}}
-const PATTERN = /\{\{\s*([^{}]*?)\s*\}\}/g
-
-export type Person = { displayName: string | null; zaloName: string | null; alias: string | null; gender: number | null; phoneNumber: string | null }
-
-const isVariable = (k: string): k is Variable => (VARIABLES as readonly string[]).includes(k)
+export const isVariable = (k: string): k is Variable => (VARIABLES as readonly string[]).includes(k)
 
 export const variablesIn = (body: string) => [...new Set([...body.matchAll(PATTERN)].map((m) => m[1]))]
 export const unknownVariables = (body: string) => variablesIn(body).filter((k) => !isVariable(k))
@@ -26,8 +19,6 @@ export function valuesOf(p: Person, me: string): Record<Variable, string> {
     me,
   }
 }
-
-const FALLBACK: Partial<Record<Variable, string>> = { pronoun: 'anh/chị' }
 
 export const render = (body: string, values: Record<Variable, string>) =>
   body.replace(PATTERN, (_, k: string) => (isVariable(k) ? values[k] || FALLBACK[k] || '' : ''))

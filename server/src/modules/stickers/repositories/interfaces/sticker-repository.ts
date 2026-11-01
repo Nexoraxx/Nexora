@@ -1,6 +1,5 @@
 import type { StickerDetail } from '@hwqnq/zca-js'
-
-export type StickerRow = StickerDetail & { fetchTs: number }
+import type { StickerRow } from '../../models/sticker.model'
 
 export default interface IStickerRepository {
   // a category's stickers fetched after `since`

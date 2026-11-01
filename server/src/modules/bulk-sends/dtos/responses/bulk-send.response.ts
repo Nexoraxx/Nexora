@@ -1,4 +1,4 @@
-import type { Variable } from '../../services/implements/template'
+import type { Variable } from '../../models/template.model'
 
 export type BulkTemplate = { id: number; name: string; body: string; updatedAt: number }
 export type BulkSendState = 'running' | 'paused' | 'done' | 'cancelled'

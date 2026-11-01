@@ -1,9 +1,7 @@
 import { Hono } from 'hono'
-import { HTTPException } from 'hono/http-exception'
 import type IAccountService from './services/interfaces/account-service'
 import { ChangeAvatarRequest, ReuseAvatarRequest, UpdateAccountStateRequest, UpdateBioRequest, UpdateProfileRequest } from './dtos/requests/account.request'
-
-const notFound = () => new HTTPException(404, { message: 'Không tìm thấy tài khoản' })
+import { notFound } from './helpers/account.helper'
 
 export const accountRoutes = (accounts: IAccountService) =>
   new Hono()

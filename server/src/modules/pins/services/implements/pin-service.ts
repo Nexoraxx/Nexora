@@ -1,49 +1,16 @@
 import { inject, injectable } from 'inversify'
 import { HTTPException } from 'hono/http-exception'
-import { FriendEventType, GroupEventType, type API, type FriendEvent, type GroupEvent } from '@hwqnq/zca-js'
+import { FriendEventType, type API, type FriendEvent, type GroupEvent } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { zaloPost } from '../../../../third-party/zalo/post'
 import type { PinRequest } from '../../dtos/requests/pin.request'
 import { TOKENS } from '../../../../di/tokens'
-import type { Pin } from '../../dtos/responses/pin.response'
 import type IPinRepository from '../../repositories/interfaces/pin-repository'
 import type IPinService from '../interfaces/pin-service'
-
-// Zalo PC topic type of a pinned message (0 note, 1 link, 2 message, 3 poll, 4 reminder)
-const MSG_TOPIC = 2
-// Zalo PC: 1-1 pins are capped at 3; groups use pin/list's pinLimit, else group_topics.pin_limit 10
-const FRIEND_PIN_LIMIT = 3
-const GROUP_PIN_LIMIT = 10
-// createGroupTopicv2's color when settings.group.topic_colors is empty
-const TOPIC_COLOR = -16777216
-// Zalo PC's msg_type codes inside a pinned message's params, and its emoji per type (getUnicodeCorrMSGType)
-const CLI_TYPE: Record<string, number> = {
-  webchat: 1,
-  'chat.voice': 31,
-  'chat.photo': 32,
-  'chat.sticker': 36,
-  'chat.doodle': 37,
-  'chat.recommended': 38,
-  'chat.location.new': 43,
-  'chat.video.msg': 44,
-  'share.file': 46,
-  'chat.gif': 49,
-}
-const EMOJI: Record<string, string> = { webchat: '📌', 'chat.photo': '🌄', 'chat.gif': '🌄', 'chat.doodle': '🌄', 'chat.video.msg': '🎥', 'chat.location.new': '📍' }
-const PIN_EVENTS = new Set([GroupEventType.NEW_PIN_TOPIC, GroupEventType.UPDATE_PIN_TOPIC, GroupEventType.UNPIN_TOPIC, GroupEventType.REORDER_PIN_TOPIC])
-
-type Topic = { id?: string | number; type?: number; params?: unknown; creatorId?: string; createTime?: number }
-type Board = { topics: Topic[]; version: number; limit: number }
-
-const json = (v: unknown) => {
-  try {
-    return (typeof v === 'string' ? JSON.parse(v) : (v ?? {})) as Record<string, unknown>
-  } catch {
-    return {}
-  }
-}
-const str = (v: unknown) => (v == null || v === '' ? null : String(v))
+import { MSG_TOPIC, FRIEND_PIN_LIMIT, GROUP_PIN_LIMIT, TOPIC_COLOR, CLI_TYPE, EMOJI, PIN_EVENTS } from '../../constants/pin.constant'
+import type { Topic, Board } from '../../models/pin.model'
+import { json, toPin } from '../../helpers/pin.helper'
 
 // Zalo PC "Ghim tin nhắn": the pin bar on top of a conversation. Groups keep pins on the group board (pin/list,
 // topic/createv2 with type 2, multi_unpin); 1-1 conversations on the friend board (friendboard/*), keyed by the friend's uid.
@@ -134,22 +101,5 @@ export default class PinService implements IPinService {
     const g = this.pins.groupSetting(accountId, groupId)
     if (!json(g?.setting).setTopicOnly) return true
     return g?.creatorId === accountId || (JSON.parse(g?.adminIds ?? '[]') as string[]).includes(accountId)
-  }
-}
-
-// params is a JSON string whose `extra` may itself be JSON (PC parses both)
-function toPin(t: Topic): Pin {
-  const p = json(t.params)
-  return {
-    topicId: String(t.id),
-    topicType: Number(t.type),
-    msgId: str(p.global_msg_id),
-    cliMsgId: str(p.client_msg_id),
-    senderUid: str(p.senderUid),
-    senderName: str(p.senderName),
-    title: String(p.title ?? ''),
-    msgType: p.msg_type == null ? null : Number(p.msg_type),
-    thumb: str(p.thumb),
-    createTime: t.createTime ?? null,
   }
 }

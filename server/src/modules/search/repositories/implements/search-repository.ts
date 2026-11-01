@@ -2,7 +2,7 @@ import { inject, injectable } from 'inversify'
 import { Database } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type ISearchRepository from '../interfaces/search-repository'
-import type { ContactRow, MessageHit } from '../interfaces/search-repository'
+import type { ContactRow, MessageHit } from '../../models/search.model'
 
 @injectable()
 export default class SearchRepository implements ISearchRepository {

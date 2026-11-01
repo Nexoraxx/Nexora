@@ -6,15 +6,8 @@ import { controlData } from '../../../../third-party/zalo/controls'
 import { zaloGet } from '../../../../third-party/zalo/post'
 import type { Settings } from '../../dtos/responses/settings.response'
 import type ISettingsService from '../interfaces/settings-service'
-
-// Zalo PC update_action_interval; ping status: 1 foreground, 0 background, 2 / 3 coming to / leaving the foreground
-const PING_EVERY = 60_000
-const FOREGROUND = 1
-const BACKGROUND = 0
-const TO_FOREGROUND = 2
-const TO_BACKGROUND = 3
-// PC reads these snake_case but writes them camelCase (as zca's UpdateSettingsType does)
-const WIRE: Record<string, string> = { quick_message_status: 'quickMessageStatus', archived_chat_status: 'archivedChatStatus' }
+import { PING_EVERY, FOREGROUND, BACKGROUND, TO_FOREGROUND, TO_BACKGROUND, WIRE } from '../../constants/settings.constant'
+import { normalize } from '../../helpers/settings.helper'
 
 // The account's own settings (/api/setting/me), kept per session: read once, then followed through this app's
 // changes and the my_settings control Zalo sends when they change on another device (zca's listener drops it).
@@ -89,6 +82,3 @@ export default class SettingsService implements ISettingsService {
     return next
   }
 }
-
-const normalize = (s: Record<string, unknown>): Settings =>
-  Object.fromEntries(Object.entries(s).flatMap(([k, v]) => (typeof v === 'boolean' ? [[k, Number(v)]] : typeof v === 'number' ? [[k, v]] : [])))

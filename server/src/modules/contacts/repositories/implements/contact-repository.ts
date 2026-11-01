@@ -4,7 +4,7 @@ import { Database, upsert } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type { Friend, FriendRequest, Group, UserProfile } from '../../dtos/responses/contact.response'
 import type IContactRepository from '../interfaces/contact-repository'
-import type { BlockedProfile, GroupInfo, ProfileRow } from '../interfaces/contact-repository'
+import type { BlockedProfile, GroupInfo, ProfileRow } from '../../models/contact.model'
 
 @injectable()
 export default class ContactRepository implements IContactRepository {

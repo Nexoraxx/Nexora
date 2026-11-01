@@ -3,7 +3,7 @@ import { Database } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type { Account, AccountState } from '../../dtos/responses/account.response'
 import type IAccountRepository from '../interfaces/account-repository'
-import type { AccountRow, SavedAccount } from '../interfaces/account-repository'
+import type { AccountRow, SavedAccount } from '../../models/account.model'
 
 @injectable()
 export default class AccountRepository implements IAccountRepository {

@@ -1,43 +1,11 @@
-import type { MediaKind, Thread } from '../../dtos/responses/message.response'
-
-// Zalo PC's SignalCommands.MSG RECEIVE_ONEONE / RECEIVE_GROUP: end-to-end encrypted (Signal) messages, which zca
-// passes on as ciphertext. Decrypted ones are stored as their real type with e2eeStatus E2EE_READ; the rest stay
-// chat.e2ee, out of search.
-export const E2EE_CMDS = [551, 552]
-export const E2EE = 'chat.e2ee'
-// Zalo PC's MSG_E2EE: decrypted
-export const E2EE_READ = 3000
-
-export type Row = {
-  accountId: string
-  msgId: string
-  cliMsgId?: string
-  toUid: string // thread id
-  fromUid: string | null // null: system message
-  dName?: string
-  msgType: string
-  sendDttm: number
-  message: string // content as JSON
-  msgText?: string | null
-  [column: string]: unknown
-}
-export type Saved = { row: Row; isGroup: boolean; isSelf: boolean }
-export type StoredMessage = Row & {
-  cliMsgId: string | null
-  quote: string | null
-  mentions: string | null
-  properties: string | null
-  ttl: number | null
-  st: number | null
-  at: number | null
-  cmd: number | null
-  staredDttm: number | null
-  e2eeStatus: number | null
-}
-export type ThreadRow = Omit<Thread, 'isGroup' | 'content' | 'e2ee'> & { isGroup: number; message: string | null; e2ee: number }
+import type { MediaKind } from '../../dtos/responses/message.response'
+import type { Healed, Saved, StoredMessage, ThreadRow } from '../../models/message.model'
 
 export default interface IMessageRepository {
   tagE2ee(): void
+  transaction<T>(fn: () => T): T
+  ciphertexts(accountId: string): { msgId: string; content: string }[]
+  healCiphertexts(accountId: string, rows: Healed[]): void
   threads(accountId: string, limit: number): ThreadRow[]
   // a message and everything newer, oldest last
   listFrom(accountId: string, threadId: string, sendDttm: number, limit: number): StoredMessage[]

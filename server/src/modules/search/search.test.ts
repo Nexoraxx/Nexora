@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events'
 import { openDatabase } from '../../dbs/sqlite'
 import type { ZcaService } from '../../third-party/zalo/zalo-client'
 import SearchRepository from './repositories/implements/search-repository'
-import SearchService, { nameMatches } from './services/implements/search-service'
+import SearchService from './services/implements/search-service'
+import { nameMatches } from './helpers/search.helper'
 
 const setup = () => {
   const db = openDatabase(':memory:')

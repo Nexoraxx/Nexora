@@ -6,27 +6,21 @@ import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { zaloGet } from '../../../../third-party/zalo/post'
 import type { GroupMember, GroupDetails, BlockedUser, UserProfile } from '../../dtos/responses/contact.response'
 import type IContactRepository from '../../repositories/interfaces/contact-repository'
-import type { BlockedProfile } from '../../repositories/interfaces/contact-repository'
 import type ISettingsService from '../../../settings/services/interfaces/settings-service'
 import type { FindUserRequest } from '../../dtos/requests/contact.request'
 import { TOKENS } from '../../../../di/tokens'
 import type IContactService from '../interfaces/contact-service'
-
-// Zalo PC default for group_config.num_max_group_a_req
-const GROUP_INFO_BATCH = 100
-// friendRequestType holds Zalo's recommType: 1 = suggestion, 2 = received request (sent requests aren't stored, as in Zalo PC)
-const RECEIVED_REQUEST = 2
-const collator = new Intl.Collator('vi')
-// Zalo PC keeps friend/onlines this long (list_friend_online_time)
-const ONLINE_TTL = 60_000
-// Zalo answers requested/list with error 112 when this account has sent no friend request
-const NO_SENT_REQUESTS = 112
-// Zalo PC fetches "Danh sách chặn" 50 at a time
-const BLOCK_PAGE = 50
-const NO_REQUEST = { friendRequestType: null, friendRequestMsg: null, friendRequestSource: null, friendRequestFetchTime: null, friendRequestRead: null }
-
-// /api/social/group/members takes ids in the query here (zca sends GET; PC POSTs 300 at a time)
-const MEMBER_BATCH = 100
+import {
+  GROUP_INFO_BATCH,
+  RECEIVED_REQUEST,
+  collator,
+  ONLINE_TTL,
+  NO_SENT_REQUESTS,
+  BLOCK_PAGE,
+  NO_REQUEST,
+  MEMBER_BATCH,
+} from '../../constants/contact.constant'
+import type { BlockedProfile } from '../../models/contact.model'
 
 @injectable()
 export default class ContactService implements IContactService {

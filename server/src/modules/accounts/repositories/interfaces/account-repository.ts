@@ -1,7 +1,5 @@
 import type { Account, AccountState } from '../../dtos/responses/account.response'
-
-export type AccountRow = Omit<Account, 'status'> & { imei: string; cookie: string; userAgent: string; language: string | null }
-export type SavedAccount = { id: string; name: string; avatar: string; phoneNumber: string; imei: string; cookie: string; userAgent: string; language: string; now: number }
+import type { AccountRow, SavedAccount } from '../../models/account.model'
 
 export default interface IAccountRepository {
   list(): Omit<Account, 'status'>[]

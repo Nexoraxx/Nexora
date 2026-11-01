@@ -3,10 +3,8 @@ import { Database, upsert } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type { MediaKind } from '../../dtos/responses/message.response'
 import type IMessageRepository from '../interfaces/message-repository'
-import { E2EE, E2EE_CMDS, E2EE_READ, type Row, type Saved, type StoredMessage, type ThreadRow } from '../interfaces/message-repository'
-
-// Zalo PC turns a recalled message into this type
-const UNDONE = 'chat.undo'
+import { UNDONE, E2EE, E2EE_CMDS, E2EE_READ } from '../../constants/message.constant'
+import type { Healed, Row, Saved, StoredMessage, ThreadRow } from '../../models/message.model'
 
 const MEDIA: Record<MediaKind, string> = {
   media: `msgType IN ('chat.photo', 'chat.gif', 'chat.video.msg')`,
@@ -33,7 +31,6 @@ export default class MessageRepository implements IMessageRepository {
 
   // Unread = incoming messages newer than the thread's read marker, counted on read so every sync path
   // (live, offline queue, preload, cloud) can store duplicates without double counting.
-  // ponytail: counted per query; materialize into unread_conv counters if long thread lists get slow
   threads(accountId: string, limit: number) {
     return this.db
       .query<ThreadRow, [string, number]>(
@@ -41,7 +38,7 @@ export default class MessageRepository implements IMessageRepository {
            COALESCE(us.alias, us.displayName, g.displayName) AS name, COALESCE(us.avatar, g.avatar) AS avatar,
            EXISTS (SELECT 1 FROM e2ee_metadata e WHERE e.accountId = p.accountId AND e.uid = p.convId AND e.status = 1) AS e2ee,
            (SELECT count(*) FROM message m WHERE m.accountId = p.accountId AND m.toUid = p.convId AND m.fromUid != p.accountId
-              AND m.msgType != '${UNDONE}' AND (u.lastProcessMsgId IS NULL OR CAST(m.msgId AS INTEGER) > CAST(u.lastProcessMsgId AS INTEGER))) AS unread
+              AND m.msgType != '${UNDONE}' AND CAST(m.msgId AS INTEGER) > COALESCE(CAST(u.lastProcessMsgId AS INTEGER), -9223372036854775808)) AS unread
          FROM preview_message p
          LEFT JOIN unread_conv u ON u.accountId = p.accountId AND u.convId = p.convId
          LEFT JOIN user us ON p.isGroup = 0 AND us.accountId = p.accountId AND us.userId = p.convId
@@ -132,6 +129,25 @@ export default class MessageRepository implements IMessageRepository {
     })()
   }
 
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)()
+  }
+
+  ciphertexts(accountId: string) {
+    return this.db
+      .query<{ msgId: string; content: string }, [string]>(
+        `SELECT m.msgId, d.content FROM message m
+         JOIN e2ee_deciphered d ON d.accountId = m.accountId AND d.key = m.cliMsgId || '_' || m.fromUid
+         WHERE m.accountId = ? AND m.cmd IN (513, 713)`,
+      )
+      .all(accountId)
+  }
+
+  healCiphertexts(accountId: string, rows: Healed[]) {
+    const heal = this.db.query(`UPDATE message SET message = ?, msgText = ?, quote = ?, cmd = ${E2EE_CMDS[0]}, e2eeStatus = ${E2EE_READ} WHERE accountId = ? AND msgId = ?`)
+    this.db.transaction(() => rows.forEach((r) => heal.run(r.message, r.msgText, r.quote, accountId, r.msgId)))()
+  }
+
   setStarred(accountId: string, msgId: string, starred: boolean) {
     this.db.run(`UPDATE message SET staredDttm = ? WHERE accountId = ? AND msgId = ?`, [starred ? Date.now() : null, accountId, msgId])
   }
@@ -149,10 +165,10 @@ export default class MessageRepository implements IMessageRepository {
   }
 
   forgetThreads(accountId: string, threadIds: string[]) {
+    const ids = JSON.stringify(threadIds)
     this.db.transaction(() => {
-      for (const id of threadIds)
-        for (const sql of [`DELETE FROM message WHERE accountId = ? AND toUid = ?`, `DELETE FROM preview_message WHERE accountId = ? AND convId = ?`, `DELETE FROM unread_conv WHERE accountId = ? AND convId = ?`])
-          this.db.run(sql, [accountId, id])
+      for (const [table, column] of [['message', 'toUid'], ['preview_message', 'convId'], ['unread_conv', 'convId']])
+        this.db.run(`DELETE FROM ${table} WHERE accountId = ? AND ${column} IN (SELECT value FROM json_each(?))`, [accountId, ids])
     })()
   }
 
@@ -264,8 +280,13 @@ export default class MessageRepository implements IMessageRepository {
 
   // after messages are removed, the thread's preview falls back to its newest remaining message
   private repairPreview(accountId: string, threadId: string) {
-    const preview = this.db.query<{ msgId: string; isGroup: number }, [string, string]>(`SELECT msgId, isGroup FROM preview_message WHERE accountId = ? AND convId = ?`).get(accountId, threadId)
-    if (!preview || this.find(accountId, preview.msgId)) return
+    const preview = this.db
+      .query<{ isGroup: number }, [string, string]>(
+        `SELECT isGroup FROM preview_message p WHERE accountId = ? AND convId = ?
+           AND NOT EXISTS (SELECT 1 FROM message m WHERE m.accountId = p.accountId AND m.msgId = p.msgId)`,
+      )
+      .get(accountId, threadId)
+    if (!preview) return
     this.db.run(`DELETE FROM preview_message WHERE accountId = ? AND convId = ?`, [accountId, threadId])
     const latest = this.db.query<StoredMessage, [string, string]>(`SELECT * FROM message WHERE accountId = ? AND toUid = ? ORDER BY sendDttm DESC LIMIT 1`).get(accountId, threadId)
     if (latest) this.updatePreview(latest, !!preview.isGroup)

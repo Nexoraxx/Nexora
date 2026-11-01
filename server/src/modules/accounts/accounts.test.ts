@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events'
 import { ZaloApiError } from '@hwqnq/zca-js'
 import type { ZcaService } from '../../third-party/zalo/zalo-client'
 import type IAccountRepository from './repositories/interfaces/account-repository'
-import AccountService, { lostSession, retryDelay } from './services/implements/account-service'
+import AccountService from './services/implements/account-service'
+import { lostSession, retryDelay } from './helpers/account.helper'
 
 afterEach(() => mock.restore())
 

@@ -20,117 +20,52 @@ import {
   type Undo,
   ZaloApiError,
 } from '@hwqnq/zca-js'
-import type { Database } from '../../../../dbs/sqlite'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { nextClientId, zaloPost } from '../../../../third-party/zalo/post'
 import type IContactService from '../../../contacts/services/interfaces/contact-service'
 import type IConversationService from '../../../conversations/services/interfaces/conversation-service'
-import type { Gif, SearchRequest, SendAttachmentsRequest, SendCardsRequest, SendLinkRequest, SendMessageRequest, SendStickerRequest } from '../../dtos/requests/message.request'
+import type {
+  Gif,
+  SearchRequest,
+  SendAttachmentsRequest,
+  SendCardsRequest,
+  SendLinkRequest,
+  SendMessageRequest,
+  SendStickerRequest,
+} from '../../dtos/requests/message.request'
 import type { LinkPreview, MessageInfo, MessageRow, ReactionCount, Thread, MediaKind } from '../../dtos/responses/message.response'
-import { GROUP_NOTI, GROUP_STATE_EVENTS, groupEventText } from './group-event'
 import { TOKENS } from '../../../../di/tokens'
 import type IMessageRepository from '../../repositories/interfaces/message-repository'
-import { E2EE, E2EE_CMDS, type Row, type Saved, type StoredMessage } from '../../repositories/interfaces/message-repository'
 import type IMessageService from '../interfaces/message-service'
 import { E2eeService } from '../../../../third-party/signal/e2ee-service'
 import { E2EE_STATUS, type Decrypted, type E2eeMessage } from '../../../../third-party/signal/e2ee-message-receiver'
-
-// events that may take this account out of a group
-const OUT_EVENTS = new Set<GroupEventType>([GroupEventType.LEAVE, GroupEventType.REMOVE_MEMBER, GroupEventType.BLOCK_MEMBER])
-
-// sendDeliveredEvent / sendSeenEvent accept at most 50 messages
-const RECEIPT_BATCH = 50
-const LAST_SEEN_BATCH = 50
-// Zalo PC doesn't repeat a group cloud request with the same params within this window (cloud.preventCloudLoadSameParams)
-const CLOUD_SAME_PARAMS_MS = 10_000
-// Zalo PC: settings.chat.time_undomsg (seconds) when the server sends it, else 5 minutes; max_msg_per_recall
-const RECALL_SECONDS = 300
-const MAX_RECALL = 50
-// Zalo PC's max_member_group_show_seen: bigger groups get no "Đã xem" / "Đã nhận" lists
-const SEEN_MAX_MEMBERS = 20
-// a jump to a found message loads everything from it to the newest, up to this many
-const JUMP_LIMIT = 1000
-// Zalo PC's msgType codes for /api/message/forward and /api/group/forward (MSGTYPE_FORWARD_*)
-const FORWARD_TYPE: Record<string, number> = { 'share.file': 1, 'chat.photo': 2, 'chat.doodle': 2, 'chat.voice': 3, 'chat.gif': 4, 'chat.video.msg': 5, 'chat.location.new': 7 }
-const FORWARD_CONTACT = 6
-// Zalo PC "Gửi danh thiếp": at most 9 cards at once
-const MAX_CARDS = 9
-// Zalo PC link preview: max_url_character, title / desc cut at 80 / 200
-const MAX_URL = 500
-const LINK_TITLE = 80
-const LINK_DESC = 200
-// Zalo PC GIF panel: first trending page 50, then pages of 10 (search too); src 1 = sent from the chat bar
-const GIF_FIRST_PAGE = 50
-const GIF_PAGE = 10
-const GIF_SRC_CHAT = 1
-// ponytail: only text is end-to-end encrypted so far; replies, media, stickers, links, cards, forwards are refused there
-const E2EE_UNSUPPORTED = 'Nexora chưa hỗ trợ gửi loại tin nhắn này trong trò chuyện mã hóa đầu cuối'
-// this account's devices in PC's MISS_BUNDLE_KEY_* messages, in PC's order
-const MY_DEVICE_NAMES: [number, string][] = [
-  [0, 'Zalo trên điện thoại'],
-  [2, 'Zalo PC'],
-  [1, 'Zalo trên trình duyệt máy tính'],
-]
-// stored content of attachment messages (photo, file, link, card, sticker, ...); params is a JSON string
-type Attachment = { title?: string; description?: string; href?: string; thumb?: string; action?: string; params?: unknown; id?: number; catId?: number; type?: number }
-
-type ReactionMap = Record<string, { icons: Record<string, number>; lastId: string }>
-
-// search text: a text body, a file name, a link title
-const textOf = (content: unknown) => (typeof content === 'string' ? content : ((content as { title?: string })?.title ?? null))
-
-// E2EE messages (cmd 551) are stored decrypted; one Nexora can't read stays chat.e2ee, out of search, with its
-// decryption state in e2eeStatus
-const toRow = (accountId: string, { data, threadId }: Message, dec?: Decrypted): Row => {
-  const e2ee = E2EE_CMDS.includes(Number(data.cmd))
-  const read = e2ee && dec?.status === E2EE_STATUS.OK
-  const content = read ? dec.content : data.content
-  return {
-    accountId,
-    msgId: String(data.msgId),
-    cliMsgId: String(data.cliMsgId),
-    toUid: threadId,
-    fromUid: data.uidFrom,
-    dName: data.dName,
-    msgType: e2ee && !read ? E2EE : data.msgType,
-    // a missing ts must not fail the NOT NULL column and drop the whole batch
-    sendDttm: Number(data.ts) || Date.now(),
-    message: JSON.stringify(content),
-    msgText: e2ee && !read ? null : textOf(content),
-    quote: read && dec.quote ? dec.quote : data.quote,
-    mentions: 'mentions' in data ? data.mentions : undefined,
-    ttl: data.ttl,
-    status: data.status,
-    notify: data.notify,
-    st: data.st,
-    at: data.at,
-    cmd: data.cmd,
-    properties: data.propertyExt,
-    paramsExt: data.paramsExt,
-    topOut: data.topOut,
-    topOutTimeOut: data.topOutTimeOut,
-    topOutImprTimeOut: data.topOutImprTimeOut,
-    ...(e2ee && { e2eeStatus: dec?.status ?? null }),
-  }
-}
-
-const parse = (json: string | null) => (json == null ? null : JSON.parse(json))
-const parseParams = (c: { params?: unknown }) => {
-  try {
-    return (typeof c.params === 'string' ? JSON.parse(c.params) : (c.params ?? {})) as Record<string, unknown>
-  } catch {
-    return {}
-  }
-}
-// "5 phút", "1 giờ", "1 ngày" for PC's recall limit message
-const duration = (seconds: number) => (seconds % 86400 === 0 ? `${seconds / 86400} ngày` : seconds % 3600 === 0 ? `${seconds / 3600} giờ` : `${Math.round(seconds / 60)} phút`)
-// PC's getPhoneNumberPro: Vietnamese numbers as 0xxx, others as +country
-const phone = (n: string | null | undefined) => (!n ? undefined : n.startsWith('84') ? `0${n.slice(2)}` : n.startsWith('0') || n.startsWith('+') ? n : `+${n}`)
-// receiver fields of PC's /forward, /gif, ... requests
-const receiver = (threadId: string, type: ThreadType, userKey = 'toId') => (type === ThreadType.Group ? { grid: threadId, visibility: 0 } : { [userKey]: threadId })
-const newer = (a: string, b: string) => BigInt(a) > BigInt(b)
-const chunks = <T>(items: T[], size: number) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
+import {
+  OUT_EVENTS,
+  RECEIPT_BATCH,
+  LAST_SEEN_BATCH,
+  CLOUD_SAME_PARAMS_MS,
+  RECALL_SECONDS,
+  MAX_RECALL,
+  SEEN_MAX_MEMBERS,
+  JUMP_LIMIT,
+  FORWARD_TYPE,
+  FORWARD_CONTACT,
+  MAX_CARDS,
+  MAX_URL,
+  LINK_TITLE,
+  LINK_DESC,
+  GIF_FIRST_PAGE,
+  GIF_PAGE,
+  GIF_SRC_CHAT,
+  E2EE_UNSUPPORTED,
+  MY_DEVICE_NAMES,
+  E2EE_CMDS,
+} from '../../constants/message.constant'
+import type { Attachment, ReactionMap, Row, Saved, StoredMessage } from '../../models/message.model'
+import { textOf, toRow, parse, parseParams, duration, phone, receiver, newer, chunks } from '../../helpers/message.helper'
+import { GROUP_NOTI, GROUP_STATE_EVENTS } from '../../constants/group-event.constant'
+import { groupEventText } from '../../helpers/group-event.helper'
 
 @injectable()
 export default class MessageService implements IMessageService {
@@ -140,7 +75,6 @@ export default class MessageService implements IMessageService {
   private cloudCalls = new Map<string, number>()
 
   constructor(
-    @inject(TOKENS.Database) private db: Database,
     @inject(TOKENS.MessageRepository) private messages: IMessageRepository,
     @inject(ZcaService) private zca: ZcaService,
     @inject(TOKENS.ContactService) private contacts: IContactService,
@@ -740,7 +674,7 @@ export default class MessageService implements IMessageService {
   // Each user keeps their own icon counts; `lastId` (the reaction event's id) makes re-delivery a no-op.
   private onReactions(accountId: string, reactions: Reaction[], live: boolean) {
     const touched = new Map<string, string>()
-    this.db.transaction(() => {
+    this.messages.transaction(() => {
       for (const r of reactions) {
         const { rMsg, rIcon, rType } = r.data.content
         for (const target of rMsg ?? []) {
@@ -755,7 +689,7 @@ export default class MessageService implements IMessageService {
           touched.set(msgId, r.threadId)
         }
       }
-    })()
+    })
     if (live)
       for (const [msgId, threadId] of touched) {
         const map = parse(this.messages.reaction(accountId, msgId)!.reactions)
@@ -902,7 +836,7 @@ export default class MessageService implements IMessageService {
   private store(accountId: string, msgs: Message[], decs?: Map<string, Decrypted>) {
     const saved: Saved[] = []
     const undone: string[] = []
-    this.db.transaction(() => {
+    this.messages.transaction(() => {
       for (const m of msgs) {
         const dec = decs?.get(String(m.data.msgId))
         // the server's copy of an E2EE message this device sent: already stored decrypted
@@ -915,7 +849,7 @@ export default class MessageService implements IMessageService {
       // recalls after saving: the recalled message may be in this same batch
       this.messages.save(accountId, saved)
       for (const msgId of undone) this.messages.recall(accountId, msgId)
-    })()
+    })
     return { saved, undone }
   }
 
@@ -923,28 +857,15 @@ export default class MessageService implements IMessageService {
   // decryption and the partial upsert overwrote the message with the cipher. The decryption is still in
   // e2ee_deciphered, so re-apply it and give the rows the E2EE message cmd so they read as decrypted.
   private repairE2ee(accountId: string) {
-    const rows = this.db
-      .query<{ msgId: string; content: string }, [string]>(
-        `SELECT m.msgId, d.content AS content FROM message m
-         JOIN e2ee_deciphered d ON d.accountId = m.accountId AND d.key = m.cliMsgId || '_' || m.fromUid
-         WHERE m.accountId = ? AND m.cmd IN (513, 713)`,
-      )
-      .all(accountId)
+    const rows = this.messages.ciphertexts(accountId)
     if (!rows.length) return
-    this.db.transaction(() => {
-      for (const r of rows) {
-        const dec = JSON.parse(r.content) as { content: unknown; quote?: unknown }
-        this.db.run(`UPDATE message SET message = ?, msgText = ?, quote = ?, cmd = ?, e2eeStatus = ? WHERE accountId = ? AND msgId = ?`, [
-          JSON.stringify(dec.content),
-          textOf(dec.content),
-          dec.quote ? JSON.stringify(dec.quote) : null,
-          E2EE_CMDS[0],
-          E2EE_STATUS.OK,
-          accountId,
-          r.msgId,
-        ])
-      }
-    })()
+    this.messages.healCiphertexts(
+      accountId,
+      rows.map(({ msgId, content }) => {
+        const dec = JSON.parse(content) as { content: unknown; quote?: unknown }
+        return { msgId, message: JSON.stringify(dec.content), msgText: textOf(dec.content), quote: dec.quote ? JSON.stringify(dec.quote) : null }
+      }),
+    )
     console.log(`[${accountId}] e2ee: healed ${rows.length} offline message(s) stored as ciphertext`)
     broadcast({ type: 'threads', accountId })
   }

@@ -6,7 +6,8 @@ import type { ZcaService } from '../../third-party/zalo/zalo-client'
 import type IContactService from '../contacts/services/interfaces/contact-service'
 import type IMessageService from '../messages/services/interfaces/message-service'
 import GroupRepository from './repositories/implements/group-repository'
-import GroupService, { inviteError } from './services/implements/group-service'
+import GroupService from './services/implements/group-service'
+import { inviteError } from './helpers/group.helper'
 
 test('create, settings, invite errors and leaving follow Zalo PC', async () => {
   const db = openDatabase(':memory:')

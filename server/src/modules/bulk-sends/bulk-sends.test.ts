@@ -8,7 +8,7 @@ import type IMessageService from '../messages/services/interfaces/message-servic
 import { TemplateRequest } from './dtos/requests/bulk-send.request'
 import BulkSendRepository from './repositories/implements/bulk-send-repository'
 import BulkSendService from './services/implements/bulk-send-service'
-import { missingIn, render, unknownVariables, valuesOf } from './services/implements/template'
+import { missingIn, render, unknownVariables, valuesOf } from './helpers/template.helper'
 
 test('template: English keys, spaces in braces, fallbacks, unknown keys', () => {
   const lan = valuesOf({ displayName: 'Lan Nguyễn', zaloName: 'lan', alias: 'Lan váy đỏ 0912', gender: 1, phoneNumber: '' }, 'Shop A')

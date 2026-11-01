@@ -1,10 +1,6 @@
-import type { GetAllFriendsResponse, GetFriendRecommendationsResponse, GroupInfoResponse } from '@hwqnq/zca-js'
-import type { Profile } from '../../../accounts/dtos/responses/account.response'
+import type { GetAllFriendsResponse, GetFriendRecommendationsResponse } from '@hwqnq/zca-js'
 import type { Friend, FriendRequest, Group, UserProfile } from '../../dtos/responses/contact.response'
-
-export type GroupInfo = GroupInfoResponse['gridInfoMap'][string]
-export type ProfileRow = Omit<Profile, 'dob'> & { alias: string | null; isFr: number; isBlocked: number | null; friendRequestType: number | null }
-export type BlockedProfile = { userId: string; displayName?: string; zaloName?: string; avatar?: string }
+import type { GroupInfo, ProfileRow, BlockedProfile } from '../../models/contact.model'
 
 export default interface IContactRepository {
   friends(accountId: string): Friend[]

@@ -10,70 +10,26 @@ import type { CreateTodoRequest } from '../../dtos/requests/todo.request'
 import { TOKENS } from '../../../../di/tokens'
 import type ITodoRepository from '../../repositories/interfaces/todo-repository'
 import type ITodoService from '../interfaces/todo-service'
-
-// PC's MAX_TODO_CONTENT; TODO_DATE_TYPE NO_DATE / custom; CREATE_TODO_SRC MSG_MENU / CHATBAR_ICON; MSG_TEXT
-const MAX_CONTENT = 2000
-const NO_DATE = 0
-const CUSTOM_DATE = 5
-const FROM_MESSAGE = 2
-const FROM_CHATBAR = 5
-const MSG_TEXT = 1
-const TODO_MESSAGE = 'chat.todo'
-// zca's message types as PC's numeric ones (zca's getClientMessageType, not exported)
-const CLIENT_TYPE: Record<string, number> = {
-  webchat: 1,
-  'chat.voice': 31,
-  'chat.photo': 32,
-  'chat.sticker': 36,
-  'chat.doodle': 37,
-  'chat.recommended': 38,
-  'chat.link': 38,
-  'chat.location.new': 43,
-  'chat.video.msg': 44,
-  'share.file': 46,
-  'chat.gif': 49,
-}
-// verify pages until updated and deleted both come back empty; capped so a reply that never ends can't loop forever
-const MAX_PAGES = 50
-// zca's send reply has no clientId: the listener echo of our own message (selfListen) stores it
-const ECHO_TRIES = 15
-const ECHO_WAIT = 200
-
-const NOT_EXIST = 'Công việc đã bị xoá hay không còn khả dụng'
-// PC's toasts per Zalo code (STR_TODO_TOAST_*, STR_TODO_NOT_EXIST_TASK)
-const CREATE_ERRORS: Record<number, string> = { 112: 'Có lỗi xảy ra khi tạo công việc', 166: 'Tạo công việc không thành công vì bạn không thể giao việc cho một vài thành viên' }
-const STATUS_ERRORS: Record<number, string> = { 166: 'Bạn không thể thay đổi trạng thái vì công việc đã được giao cho người khác', 212: NOT_EXIST }
-const ERRORS: Record<number, string> = { 212: NOT_EXIST }
-const SEND_FAILED = 'Có lỗi xảy ra khi tạo công việc vì không thể gửi tin nhắn'
-
-const explain = (table: Record<number, string>) => (e: unknown): never => {
-  const text = e instanceof ZaloApiError && e.code != null ? table[e.code] : undefined
-  throw text ? new HTTPException(400, { message: text }) : e
-}
-// PC's task_setting defaults to enable_feature 0: To-Do stays off unless Zalo turns it on for the account
-const enabled = (api: API) => api.getContext().settings?.features?.task_setting?.enable_feature === 1
-
-// people come as ids or { uid | userId | id, status }, the lists as JSON strings at times (PC's classifyTodoItem)
-type Ref = string | number | { uid?: string; userId?: string; id?: string; status?: number }
-type Extra = { toUid?: string | number; isGroup?: boolean; msgId?: string | number }
-type RawTodo = {
-  id: string | number
-  creator: string | number
-  assignees?: Ref[] | string
-  watchers?: Ref[] | string
-  content?: string
-  description?: string
-  dueDate?: number
-  status?: number
-  createTime?: number
-  updateTime?: number
-  dingTimes?: number
-  extra?: Extra | string
-}
-type Verify = { scrollId?: string; updated?: RawTodo[]; deleted?: (string | number | { id: string | number; ts: number })[] }
-
-const refs = (v: Ref[] | string | undefined) => (parseBig<Ref[] | null>(v ?? []) ?? []).filter((r) => r != null)
-const idOf = (r: Ref) => String(typeof r === 'object' ? (r.uid ?? r.userId ?? r.id) : r)
+import {
+  MAX_CONTENT,
+  NO_DATE,
+  CUSTOM_DATE,
+  FROM_MESSAGE,
+  FROM_CHATBAR,
+  MSG_TEXT,
+  TODO_MESSAGE,
+  CLIENT_TYPE,
+  MAX_PAGES,
+  ECHO_TRIES,
+  ECHO_WAIT,
+  CREATE_ERRORS,
+  STATUS_ERRORS,
+  ERRORS,
+  SEND_FAILED,
+} from '../../constants/todo.constant'
+import { enabled, refs, idOf } from '../../helpers/todo.helper'
+import { explain } from '../../../../core/extensions/exceptions'
+import type { Extra, RawTodo, Verify } from '../../models/todo.model'
 
 // Zalo PC's To-Do ("Công việc"): personal-board todos assigned in a conversation, each anchored on a message there.
 // Changes from anyone, any device, arrive as "chat.todo" messages (todo.create / update / delete ...) and go out on

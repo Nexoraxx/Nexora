@@ -5,59 +5,10 @@ import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { TOKENS } from '../../../../di/tokens'
 import type { StickerItem, StickerCategoryItem } from '../../dtos/responses/sticker.response'
 import type IStickerRepository from '../../repositories/interfaces/sticker-repository'
-import type { StickerRow } from '../../repositories/interfaces/sticker-repository'
 import type IStickerService from '../interfaces/sticker-service'
-
-// Zalo PC sticker constants (renderer module ynGT)
-const BUILTIN_CATE = 0 // "Củ hành", shipped with the app
-const BUILTIN_COUNT = 30
-const BUILTIN_BASE = 'https://stc-chat.zdn.vn/images/stickers/default/'
-const CATALOG_SALT = 'qebjuzwihygr' // dataUrl is trusted only when md5(text + salt) === cs
-const MAX_RECENT = 12
-const EXT_WEBP = 2 // STICKER_EXT { PNG: 0, JPG: 1, WEBP: 2 }
-const DAY = 24 * 3600e3
-// ponytail: a category's stickers are refetched weekly; Zalo compares the category version instead
-const STICKERS_STALE = 7 * DAY
-
-type SuggestResponse = { sugg_sticker?: { sticker_id: number; cate_id: number }[] | null; expired_time?: number }
-type SuggestApi = (props: { keyword: string }) => Promise<SuggestResponse>
-// registered on each API instance via zca's custom(); zca's getStickers hits an older path
-const SUGGEST_API = 'nexoraStickerSuggest'
-type Personal = { cates: number[]; version: number; removed: number[]; expiresAt: number }
-type Recent = { id: number; cateId: number }
-
-const BUILTIN: StickerItem[] = Array.from({ length: BUILTIN_COUNT }, (_, i) => ({
-  id: i + 1,
-  cateId: BUILTIN_CATE,
-  type: 7,
-  text: '',
-  thumb: `${BUILTIN_BASE}thumb/${i + 1}.png`,
-  anim: { url: `${BUILTIN_BASE}${i + 1}.gif`, frames: 1, duration: 0 },
-}))
-const BUILTIN_CATEGORY: StickerCategoryItem = { id: BUILTIN_CATE, name: 'Củ hành', iconUrl: BUILTIN[0].thumb, totalImage: BUILTIN_COUNT }
-
-const versioned = (url: string, version?: number | null) => (version ? `${url}${url.includes('?') ? '&' : '?'}version=${version}` : url)
-
-// Zalo PC: thumb is the webp (else png); the sprite plays when the sticker is webp or has more than one frame
-const toItem = (s: StickerDetail): StickerItem => ({
-  id: s.id,
-  cateId: s.cateId,
-  type: s.type,
-  text: s.text ?? '',
-  thumb: versioned(s.stickerWebpUrl ?? s.stickerUrl, s.version),
-  anim:
-    s.stickerSpriteUrl && (s.ext === EXT_WEBP || s.totalFrames > 1)
-      ? { url: versioned(s.stickerSpriteUrl, s.version), frames: s.ext === EXT_WEBP ? 1 : s.totalFrames, duration: s.duration || 250 }
-      : null,
-})
-
-const toCategory = (c: StickerCategory): StickerCategoryItem => ({ id: c.id, name: c.name, iconUrl: c.iconUrl, totalImage: c.totalImage })
-
-// Zalo PC store order: type desc, then status desc with status 4 counted as 0
-const storeOrder = (a: StickerCategory, b: StickerCategory) => {
-  const status = (c: StickerCategory) => (c.status === 4 ? 0 : c.status)
-  return a.type === b.type ? status(b) - status(a) : b.type - a.type
-}
+import { BUILTIN_CATE, CATALOG_SALT, MAX_RECENT, DAY, STICKERS_STALE, SUGGEST_API, BUILTIN, BUILTIN_CATEGORY } from '../../constants/sticker.constant'
+import type { SuggestResponse, SuggestApi, Personal, Recent, StickerRow } from '../../models/sticker.model'
+import { toItem, toCategory, storeOrder } from '../../helpers/sticker.helper'
 
 @injectable()
 export default class StickerService implements IStickerService {
