@@ -21,12 +21,7 @@ import {
   UndoManyRequest,
 } from './dtos/requests/message.request'
 import { parseE2eeKey, stripE2eeParams, decryptE2eeMedia } from '../../third-party/signal/e2ee-content'
-
-const list = <T>(v: T | T[] | undefined) => (v === undefined ? [] : Array.isArray(v) ? v : [v])
-
-// content-type for a decrypted E2EE blob, from the href path extension (the CDN's type is for the encrypted bytes)
-const MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', m4a: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', amr: 'audio/amr' }
-const mimeOf = (url: string) => MIME[(stripE2eeParams(url).split('?')[0].match(/\.([a-z0-9]+)$/i)?.[1] ?? '').toLowerCase()] ?? 'application/octet-stream'
+import { list, mimeOf } from './helpers/message.helper'
 
 // Mounted under /accounts/:accountId. Live updates go out on /events: message, undo, reaction, receipt, typing, threads.
 export const messageRoutes = (messages: IMessageService) =>

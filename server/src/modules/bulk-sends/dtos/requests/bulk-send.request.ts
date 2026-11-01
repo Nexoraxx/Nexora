@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { unknownVariables } from '../../services/implements/template'
+import { unknownVariables } from '../../helpers/template.helper'
 
 // as Zalo PC's message box: up to 2800 UTF-8 bytes, line breaks as \n. Unknown {{keys}} are refused so a customer
 // never reads "{{nmae}}"

@@ -1,7 +1,4 @@
-import type { SearchMessage } from '../../dtos/responses/search.response'
-
-export type ContactRow = { userId: string; isGroup: number; alias: string | null; displayName: string | null; zaloName: string | null; avatar: string | null; isFr: number; last: number | null }
-export type MessageHit = Omit<SearchMessage, 'isGroup' | 'content'> & { isGroup: number | null; message: string | null }
+import type { ContactRow, MessageHit } from '../../models/search.model'
 
 export default interface ISearchRepository {
   // friends, people chatted with and groups, with the time of their last message

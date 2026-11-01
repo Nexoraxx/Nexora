@@ -2,8 +2,8 @@ import { inject, injectable } from 'inversify'
 import { Database } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type { BulkSend, BulkSendState, BulkTemplate, Recipient, RecipientState } from '../../dtos/responses/bulk-send.response'
-import type { Friend, Next } from '../interfaces/bulk-send-repository'
 import type IBulkSendRepository from '../interfaces/bulk-send-repository'
+import type { Friend, Next } from '../../models/bulk-send.model'
 
 const SEND = `SELECT s.id, s.accountId, s.name, s.state, s.pauseReason, s.createdAt,
   COUNT(r.userId) AS total, COALESCE(SUM(r.state = 'sent'), 0) AS sent, COALESCE(SUM(r.state = 'failed'), 0) AS failed,

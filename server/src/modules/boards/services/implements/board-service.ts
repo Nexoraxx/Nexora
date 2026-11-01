@@ -1,6 +1,5 @@
 import { inject, injectable } from 'inversify'
-import { HTTPException } from 'hono/http-exception'
-import { BoardType, GroupEventType, ReminderResponseStatus, ThreadType, ZaloApiError, type NoteDetail, type PollDetail } from '@hwqnq/zca-js'
+import { BoardType, ReminderResponseStatus, type NoteDetail, type PollDetail } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { zaloPost } from '../../../../third-party/zalo/post'
@@ -9,31 +8,9 @@ import { TOKENS } from '../../../../di/tokens'
 import type { Poll, BoardItem, Reminder } from '../../dtos/responses/board.response'
 import type IBoardRepository from '../../repositories/interfaces/board-repository'
 import type IBoardService from '../interfaces/board-service'
-
-// PC's src for things made from the chat bar; topic color/emoji of a note
-const CHAT_BAR = 1
-const NOTE_COLOR = -16777216
-const REMINDER_EMOJI = '⏰'
-// ponytail: first page of 20, as PC's first load; page with last_id/last_type if boards get long
-const PAGE = { page: 1, count: 20 }
-// group events that change the board (notes, polls on it, reminders and their RSVPs)
-const BOARD_EVENTS = new Set<GroupEventType>([
-  GroupEventType.UPDATE_BOARD,
-  GroupEventType.REMOVE_BOARD,
-  GroupEventType.UPDATE_TOPIC,
-  GroupEventType.REMOVE_TOPIC,
-  GroupEventType.ACCEPT_REMIND,
-  GroupEventType.REJECT_REMIND,
-  GroupEventType.REMIND_TOPIC,
-])
-
-// Zalo's codes for these calls, as PC words them
-const ERRORS: Record<number, string> = { 166: 'Bạn không có quyền thực hiện thao tác này', 161: 'Nhóm không tồn tại' }
-const explain = (e: unknown): never => {
-  const text = e instanceof ZaloApiError && e.code != null ? ERRORS[e.code] : undefined
-  throw text ? new HTTPException(400, { message: text }) : e
-}
-const type = (isGroup: boolean) => (isGroup ? ThreadType.Group : ThreadType.User)
+import { CHAT_BAR, REMINDER_EMOJI, PAGE, BOARD_EVENTS, ERRORS } from '../../constants/board.constant'
+import { type } from '../../helpers/board.helper'
+import { explain } from '../../../../core/extensions/exceptions'
 
 // Zalo PC's "Bảng tin": polls ("Tạo bình chọn"), notes ("Tạo ghi chú") and reminders ("Tạo nhắc hẹn", groups and
 // 1-1). Changes from anyone arrive as group events and go out on /events as "board"; poll votes come as
@@ -51,7 +28,7 @@ export default class BoardService implements IBoardService {
 
   // notes and polls of the group's board; pinned messages live in the pin bar, reminders in their own list
   async board(accountId: string, groupId: string): Promise<BoardItem[]> {
-    const { items } = await this.zca.get(accountId).getListBoard(PAGE, groupId).catch(explain)
+    const { items } = await this.zca.get(accountId).getListBoard(PAGE, groupId).catch(explain(ERRORS))
     return (items ?? []).flatMap((i): BoardItem[] => {
       if (i.boardType === BoardType.Poll) {
         const p = i.data as PollDetail
@@ -80,7 +57,7 @@ export default class BoardService implements IBoardService {
       poll_type: 0,
       src: CHAT_BAR,
       imei: api.getContext().imei,
-    }).catch(explain)
+    }).catch(explain(ERRORS))
     // ponytail: PC also pins with a second board-pin call after create; pinAct alone is trusted here, add the call
     // if pinned polls don't show up
     broadcast({ type: 'board', accountId, threadId: groupId })
@@ -88,7 +65,7 @@ export default class BoardService implements IBoardService {
   }
 
   async poll(accountId: string, groupId: string, pollId: string): Promise<Poll> {
-    return this.view(accountId, groupId, await this.zca.get(accountId).getPollDetail(Number(pollId)).catch(explain))
+    return this.view(accountId, groupId, await this.zca.get(accountId).getPollDetail(Number(pollId)).catch(explain(ERRORS)))
   }
 
   // PC adds new options instead of voting whenever there are some, voting for them at once
@@ -97,34 +74,34 @@ export default class BoardService implements IBoardService {
     await (newOptions.length
       ? api.addPollOptions({ pollId: Number(pollId), options: newOptions.map((content) => ({ content, voted: true })), votedOptionIds: optionIds })
       : api.votePoll(Number(pollId), optionIds)
-    ).catch(explain)
+    ).catch(explain(ERRORS))
     return this.poll(accountId, groupId, pollId)
   }
 
   async lockPoll(accountId: string, groupId: string, pollId: string) {
-    await this.zca.get(accountId).lockPoll(Number(pollId)).catch(explain)
+    await this.zca.get(accountId).lockPoll(Number(pollId)).catch(explain(ERRORS))
     broadcast({ type: 'board', accountId, threadId: groupId })
   }
 
   // zca's createNote / editNote send what PC does; edits leave the pin alone unless pinning (pinAct 2 / 1)
   async createNote(accountId: string, groupId: string, { title, pin }: NoteRequest) {
-    await this.zca.get(accountId).createNote({ title, pinAct: pin }, groupId).catch(explain)
+    await this.zca.get(accountId).createNote({ title, pinAct: pin }, groupId).catch(explain(ERRORS))
     broadcast({ type: 'board', accountId, threadId: groupId })
   }
 
   async editNote(accountId: string, groupId: string, topicId: string, { title, pin }: NoteRequest) {
-    await this.zca.get(accountId).editNote({ title, topicId, pinAct: pin }, groupId).catch(explain)
+    await this.zca.get(accountId).editNote({ title, topicId, pinAct: pin }, groupId).catch(explain(ERRORS))
     broadcast({ type: 'board', accountId, threadId: groupId })
   }
 
   // a note or a group reminder: both are board topics
   async removeTopic(accountId: string, threadId: string, topicId: string, isGroup: boolean) {
-    await this.zca.get(accountId).removeReminder(topicId, threadId, type(isGroup)).catch(explain)
+    await this.zca.get(accountId).removeReminder(topicId, threadId, type(isGroup)).catch(explain(ERRORS))
     broadcast({ type: 'board', accountId, threadId })
   }
 
   async reminders(accountId: string, threadId: string, isGroup: boolean): Promise<Reminder[]> {
-    const list = await this.zca.get(accountId).getListReminder(PAGE, threadId, type(isGroup)).catch(explain)
+    const list = await this.zca.get(accountId).getListReminder(PAGE, threadId, type(isGroup)).catch(explain(ERRORS))
     return (list ?? []).map((r) => ({
       id: String(r.id ?? r.reminderId),
       title: r.params?.title ?? '',
@@ -137,17 +114,17 @@ export default class BoardService implements IBoardService {
 
   // PC keeps ⏰ on edits too (zca would clear it)
   async createReminder(accountId: string, threadId: string, { isGroup, title, startTime, repeat }: ReminderRequest) {
-    await this.zca.get(accountId).createReminder({ title, startTime, repeat, emoji: REMINDER_EMOJI }, threadId, type(isGroup)).catch(explain)
+    await this.zca.get(accountId).createReminder({ title, startTime, repeat, emoji: REMINDER_EMOJI }, threadId, type(isGroup)).catch(explain(ERRORS))
     broadcast({ type: 'board', accountId, threadId })
   }
 
   async editReminder(accountId: string, threadId: string, topicId: string, { isGroup, title, startTime, repeat }: ReminderRequest) {
-    await this.zca.get(accountId).editReminder({ title, topicId, startTime, repeat, emoji: REMINDER_EMOJI }, threadId, type(isGroup)).catch(explain)
+    await this.zca.get(accountId).editReminder({ title, topicId, startTime, repeat, emoji: REMINDER_EMOJI }, threadId, type(isGroup)).catch(explain(ERRORS))
     broadcast({ type: 'board', accountId, threadId })
   }
 
   async respond(accountId: string, groupId: string, reminderId: string, accept: boolean) {
-    await this.zca.get(accountId).respondReminder(groupId, reminderId, accept ? ReminderResponseStatus.Accept : ReminderResponseStatus.Reject).catch(explain)
+    await this.zca.get(accountId).respondReminder(groupId, reminderId, accept ? ReminderResponseStatus.Accept : ReminderResponseStatus.Reject).catch(explain(ERRORS))
     broadcast({ type: 'board', accountId, threadId: groupId })
   }
 

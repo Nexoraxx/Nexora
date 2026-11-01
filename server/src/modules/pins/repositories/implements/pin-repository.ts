@@ -2,7 +2,7 @@ import { inject, injectable } from 'inversify'
 import { Database } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type IPinRepository from '../interfaces/pin-repository'
-import type { GroupPinSetting, PinMessage } from '../interfaces/pin-repository'
+import type { GroupPinSetting, PinMessage } from '../../models/pin.model'
 
 @injectable()
 export default class PinRepository implements IPinRepository {

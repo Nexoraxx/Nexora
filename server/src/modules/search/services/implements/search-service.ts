@@ -5,38 +5,9 @@ import { TOKENS } from '../../../../di/tokens'
 import type { SearchContact, SearchMessage, RecentSearch } from '../../dtos/responses/search.response'
 import type ISearchRepository from '../../repositories/interfaces/search-repository'
 import type ISearchService from '../interfaces/search-service'
-
-// Zalo PC's global search caps: results kept per section (the "Tất cả" tab shows 6 contacts, 3 messages, 3 files)
-const MAX_CONTACTS = 100
-const MAX_MESSAGES = 100
-// sync_recent_search: num_item_show 20 contacts / groups, num_item_kw 5 keywords
-const MAX_RECENT = 20
-const MAX_KEYWORDS = 5
-// recentsearch/update errors after which PC reloads the list (version conflict)
-const STALE_VERSION = new Set([160, 266])
-
-type RecentItem = { id: string; type: number; last_update_time?: number }
-type RecentKeyword = { key: string; last_update_time?: number }
-type RecentList = { list_recent?: RecentItem[]; list_keyword?: RecentKeyword[]; version?: number }
-
-// accent-, đ- and case-insensitive, as PC's simpleStripVietnamese
-const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase()
-
-// PC's contact rule: every keyword (longest first) is the start of a different word of the name
-export function nameMatches(names: (string | null | undefined)[], q: string) {
-  const keywords = fold(q).split(/\s+/).filter(Boolean).sort((a, b) => b.length - a.length)
-  return (
-    keywords.length > 0 &&
-    names.some((name) => {
-      const words = fold(name ?? '').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-      const used = new Set<number>()
-      return keywords.every((k) => {
-        const i = words.findIndex((w, j) => !used.has(j) && w.startsWith(k))
-        return i >= 0 && used.add(i)
-      })
-    })
-  )
-}
+import { MAX_CONTACTS, MAX_MESSAGES, MAX_RECENT, MAX_KEYWORDS, STALE_VERSION } from '../../constants/search.constant'
+import type { RecentList } from '../../models/search.model'
+import { nameMatches } from '../../helpers/search.helper'
 
 // Zalo PC's search box above the conversation list: contacts and groups by name, messages and files from local
 // history (full-text, newest first), and "Tìm gần đây" kept on Zalo (recentsearch/list, update).

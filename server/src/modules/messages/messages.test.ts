@@ -1,6 +1,16 @@
 import { expect, mock, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
-import { GroupEventType, GroupMessage, Reactions, ThreadType, UserMessage, type GroupEvent, type Reaction, type TGroupMessage, type TMessage } from '@hwqnq/zca-js'
+import {
+  GroupEventType,
+  GroupMessage,
+  Reactions,
+  ThreadType,
+  UserMessage,
+  type GroupEvent,
+  type Reaction,
+  type TGroupMessage,
+  type TMessage,
+} from '@hwqnq/zca-js'
 import { openDatabase } from '../../dbs/sqlite'
 import type { ZcaService } from '../../third-party/zalo/zalo-client'
 import type IContactService from '../contacts/services/interfaces/contact-service'
@@ -70,7 +80,7 @@ const setup = () => {
     sendGif: mock(async () => ({ msgId: '602', cliMsgId: 'c602', content: { href: 'g', thumb: 't', width: 1, height: 1, type: 0 } })),
     enable: mock(async (): Promise<'complete' | 'pending'> => 'pending'),
   })
-  const messages = new MessageService(db, new MessageRepository(db), zca, contacts as unknown as IContactService, conversations as unknown as IConversationService, e2ee as unknown as E2eeService)
+  const messages = new MessageService(new MessageRepository(db), zca, contacts as unknown as IContactService, conversations as unknown as IConversationService, e2ee as unknown as E2eeService)
   return { db, api, zca, contacts, ttls, forwardUtils, e2ee, states, decrypted, messages }
 }
 const thread = (s: MessageService, id: string) => s.threads(ME, 50).find((t) => t.threadId === id)

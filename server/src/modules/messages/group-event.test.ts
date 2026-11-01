@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { GroupEventType, type GroupEvent } from '@hwqnq/zca-js'
-import { groupEventText } from './services/implements/group-event'
+import { groupEventText } from './helpers/group-event.helper'
 
 const NAMES: Record<string, string> = { a: 'An', b: 'Bình', c: 'Chi', d: 'Dũng' }
 const ctx = { me: 'me', name: (id: string) => NAMES[id], setting: { joinAppr: 0, lockViewMember: 0 }, creatorId: 'o' }

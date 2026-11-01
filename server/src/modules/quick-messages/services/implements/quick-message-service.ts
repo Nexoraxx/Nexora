@@ -1,21 +1,14 @@
 import { inject, injectable } from 'inversify'
 import { HTTPException } from 'hono/http-exception'
-import { ZaloApiError, type API } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import { zaloGet } from '../../../../third-party/zalo/post'
 import type { QuickMessageRequest } from '../../dtos/requests/quick-message.request'
-import type { QuickMessage } from '../../dtos/responses/quick-message.response'
 import type IQuickMessageService from '../interfaces/quick-message-service'
-
-// Zalo PC quick_message defaults: max_creation_quantity, supported_types (0 text, 1 with a photo)
-const MAX_ITEMS = 50
-const SUPPORTED = [0, 1]
-// error codes of create / update
-const ERRORS: Record<number, string> = { 820: 'Phím tắt đã được sử dụng' }
-
-type Media = { items?: { type?: number; thumbUrl?: string; rawUrl?: string; hdUrl?: string; normalUrl?: string }[] } | null
-type Item = { id: number | string; keyword: string; type: number; message?: { title?: string; params?: string } | null; media?: Media; lastModified?: number }
+import { MAX_ITEMS, SUPPORTED, ERRORS } from '../../constants/quick-message.constant'
+import type { Item } from '../../models/quick-message.model'
+import { fetchList, view } from '../../helpers/quick-message.helper'
+import { explain } from '../../../../core/extensions/exceptions'
 
 // Zalo PC's "Tin nhắn nhanh": the list is read once per session and kept, then refetched after a change from here
 // or from another device (control quick_message). All four calls are GETs, as PC sends them; zca's update would drop
@@ -40,7 +33,7 @@ export default class QuickMessageService implements IQuickMessageService {
     if (items.some((i) => i.keyword === keyword)) throw new HTTPException(400, { message: ERRORS[820] })
     if (!title) throw new HTTPException(400, { message: 'Nhập nội dung tin nhắn' })
     const api = this.zca.get(accountId)
-    await zaloGet(api, 'quick_message', '/api/quickmessage/create', { keyword, message: { title, params: '' }, type: 0, imei: api.getContext().imei }).catch(explain)
+    await zaloGet(api, 'quick_message', '/api/quickmessage/create', { keyword, message: { title, params: '' }, type: 0, imei: api.getContext().imei }).catch(explain(ERRORS))
     this.changed(accountId)
   }
 
@@ -55,7 +48,7 @@ export default class QuickMessageService implements IQuickMessageService {
       message: { title, params: item.message?.params ?? '' },
       media,
       type: media ? 1 : 0,
-    }).catch(explain)
+    }).catch(explain(ERRORS))
     this.changed(accountId)
   }
 
@@ -84,29 +77,4 @@ export default class QuickMessageService implements IQuickMessageService {
     this.cache.delete(accountId)
     broadcast({ type: 'quick_messages', accountId })
   }
-}
-
-// lang: PC's UI language index, 0 = Vietnamese
-const fetchList = (api: API) =>
-  zaloGet<{ items?: Item[] }>(api, 'quick_message', '/api/quickmessage/list', { version: 0, lang: 0, imei: api.getContext().imei })
-    .then((r) => r.items ?? [])
-    .catch((e) => {
-      if (e instanceof ZaloApiError && e.code === 212) return []
-      throw e
-    })
-
-const view = (i: Item): QuickMessage => {
-  const photo = i.media?.items?.[0]
-  return {
-    id: String(i.id),
-    keyword: i.keyword,
-    title: i.message?.title ?? '',
-    photo: photo?.type === 0 ? (photo.thumbUrl || photo.rawUrl || photo.hdUrl || photo.normalUrl || null) : null,
-    lastModified: Number(i.lastModified ?? 0),
-  }
-}
-
-const explain = (e: unknown): never => {
-  const text = e instanceof ZaloApiError && e.code != null ? ERRORS[e.code] : undefined
-  throw text ? new HTTPException(400, { message: text }) : e
 }

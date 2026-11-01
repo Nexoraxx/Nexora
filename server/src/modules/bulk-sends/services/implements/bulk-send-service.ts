@@ -1,6 +1,5 @@
 import { inject, injectable } from 'inversify'
 import { HTTPException } from 'hono/http-exception'
-import { ZaloApiError } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { TOKENS } from '../../../../di/tokens'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
@@ -9,25 +8,9 @@ import type { CreateBulkSendRequest, PreviewRequest, TemplateRequest } from '../
 import type { Preview } from '../../dtos/responses/bulk-send.response'
 import type IBulkSendRepository from '../../repositories/interfaces/bulk-send-repository'
 import type IBulkSendService from '../interfaces/bulk-send-service'
-import { missingIn, render, valuesOf } from './template'
-
-// ponytail: fixed random gap, nobody knows Zalo's real threshold; make it a per-run choice if accounts get limited
-const MIN_GAP = 15_000
-const MAX_GAP = 45_000
-// this many failures in a row pause the run: offline, kicked or Zalo refusing, going on only makes it worse
-const MAX_FAILS = 3
-const RESTARTED = 'Nexora đã khởi động lại giữa chừng'
-const NOT_FOUND = 'Không tìm thấy đợt gửi'
-const BUSY = 'Tài khoản này đang có một đợt gửi khác đang chạy'
-
-// Zalo answered with an error code, or Nexora refused before calling Zalo: surely not delivered. Anything else
-// (network, timeout, sendText's 502 wrapping one) may have gone out, so it's 'unknown' and never retried
-const notSent = (e: unknown) => (e instanceof ZaloApiError && e.code != null) || (e instanceof HTTPException && e.status !== 502)
-const describe = (e: unknown) => {
-  if (!(e instanceof Error)) return String(e)
-  const text = e.message && e.message !== 'null' && e.message !== 'undefined' ? e.message : 'Lỗi không xác định'
-  return e instanceof ZaloApiError && e.code != null ? `${text} (mã ${e.code})` : text
-}
+import { MIN_GAP, MAX_GAP, MAX_FAILS, RESTARTED, NOT_FOUND, BUSY } from '../../constants/bulk-send.constant'
+import { notSent, describe } from '../../helpers/bulk-send.helper'
+import { missingIn, render, valuesOf } from '../../helpers/template.helper'
 
 // "Gửi hàng loạt": one text, filled in per person from a {{variable}} template, sent to picked friends one at a time
 // with a random gap. A run lives in SQLite, so a restart pauses it where it was instead of losing or repeating it.

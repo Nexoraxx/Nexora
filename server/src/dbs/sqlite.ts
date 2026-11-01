@@ -27,7 +27,8 @@ const toSql = (v: unknown) => (v !== null && typeof v === 'object' ? JSON.string
 
 // Upsert rows keyed by the table's PK. Only columns present on the row are written, so partial rows
 // (an alias, a request flag) never wipe other fields; keys that aren't columns (extra API fields) are dropped.
-export const upsert = (db: Database, table: string, rows: Record<string, unknown>[]) => {
+export const upsert = (db: Database, table: string, rows: Record<string, unknown>[]): void => {
+  if (rows.length > 1 && !db.inTransaction) return db.transaction(() => upsert(db, table, rows))()
   const { columns, pk } = tableInfo(db, table)
   for (const row of rows) {
     const keys = Object.keys(row).filter((k) => columns.has(k) && row[k] !== undefined)

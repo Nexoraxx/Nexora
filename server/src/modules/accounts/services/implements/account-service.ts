@@ -1,35 +1,15 @@
 import { inject, injectable } from 'inversify'
 import { HTTPException } from 'hono/http-exception'
-import { LoginQRCallbackEventType, ZaloApiError, ZaloApiLoginQRAborted, type API, type User } from '@hwqnq/zca-js'
+import { LoginQRCallbackEventType, ZaloApiLoginQRAborted, type API, type User } from '@hwqnq/zca-js'
 import { broadcast } from '../../../../core'
 import { ZcaService } from '../../../../third-party/zalo/zalo-client'
 import type { ChangeAvatarRequest, UpdateProfileRequest } from '../../dtos/requests/account.request'
-import type { Account, AccountState, AccountStatus, Profile } from '../../dtos/responses/account.response'
+import type { Account, AccountState, AccountStatus } from '../../dtos/responses/account.response'
 import { TOKENS } from '../../../../di/tokens'
 import type IAccountRepository from '../../repositories/interfaces/account-repository'
-import type { AccountRow } from '../../repositories/interfaces/account-repository'
 import type IAccountService from '../interfaces/account-service'
-
-// business accounts' fields as me-v2 returns them; Zalo PC sends them back on every profile update
-type BizInfo = { biz?: { desc?: string; cate?: number; addr?: string; website?: string; email?: string } }
-
-export const retryDelay = (attempt: number) => Math.min(2000 * 2 ** (attempt - 1), 60_000)
-// zca's login says "Đăng nhập thất bại" when Zalo turns the cookie down; a network failure surfaces as fetch's own
-// error, and Zalo answering with an HTTP error as "Failed to fetch …": those pass
-export const lostSession = (e: unknown) => e instanceof ZaloApiError && !e.message.startsWith('Failed to fetch')
-
-const toProfile = (p: User): Profile => ({
-  userId: p.userId,
-  displayName: p.displayName,
-  zaloName: p.zaloName,
-  avatar: p.avatar,
-  cover: p.cover,
-  status: p.status ?? '',
-  gender: typeof p.gender === 'number' ? p.gender : null,
-  dob: p.dob ?? 0,
-  sdob: p.sdob ?? '',
-  phoneNumber: p.phoneNumber || null,
-})
+import type { BizInfo, AccountRow } from '../../models/account.model'
+import { retryDelay, lostSession, toProfile } from '../../helpers/account.helper'
 
 @injectable()
 export default class AccountService implements IAccountService {

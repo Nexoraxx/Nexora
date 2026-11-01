@@ -1,5 +1,4 @@
-export type PinMessage = { msgId: string; cliMsgId: string | null; fromUid: string | null; dName: string | null; msgType: string; message: string | null; msgText: string | null; toUid: string }
-export type GroupPinSetting = { setting: string | null; adminIds: string | null; creatorId: string | null }
+import type { PinMessage, GroupPinSetting } from '../../models/pin.model'
 
 export default interface IPinRepository {
   message(accountId: string, msgId: string): PinMessage | null

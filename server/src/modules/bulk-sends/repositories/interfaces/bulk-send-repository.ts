@@ -1,8 +1,5 @@
 import type { BulkSend, BulkSendState, BulkTemplate, Recipient, RecipientState } from '../../dtos/responses/bulk-send.response'
-import type { Person } from '../../services/implements/template'
-
-export type Friend = Person & { userId: string }
-export type Next = { sendId: number; accountId: string; userId: string; text: string }
+import type { Friend, Next } from '../../models/bulk-send.model'
 
 export default interface IBulkSendRepository {
   templates(): BulkTemplate[]

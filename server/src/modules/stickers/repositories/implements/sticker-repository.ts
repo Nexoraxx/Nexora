@@ -3,7 +3,7 @@ import type { StickerDetail } from '@hwqnq/zca-js'
 import { Database, upsert } from '../../../../dbs/sqlite'
 import { TOKENS } from '../../../../di/tokens'
 import type IStickerRepository from '../interfaces/sticker-repository'
-import type { StickerRow } from '../interfaces/sticker-repository'
+import type { StickerRow } from '../../models/sticker.model'
 
 @injectable()
 export default class StickerRepository implements IStickerRepository {

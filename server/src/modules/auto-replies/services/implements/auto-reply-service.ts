@@ -7,22 +7,9 @@ import { zaloGet, zaloPost } from '../../../../third-party/zalo/post'
 import type { AutoReplyRequest } from '../../dtos/requests/auto-reply.request'
 import type { AutoReply } from '../../dtos/responses/auto-reply.response'
 import type IAutoReplyService from '../interfaces/auto-reply-service'
-
-const DAY = 86_400_000
-const DAILY = ['RRULE:FREQ=DAILY;']
-
-type PkgConfig = { enable?: Record<string, number>; config?: Record<string, Record<string, number>> }
-
-
-export function anchor(start: number, end: number, now = Date.now()) {
-  const base = new Date(now - DAY).setHours(0, 0, 0, 0)
-  const from = base + start
-  let to = base + end
-  if (Math.abs(end - start) >= DAY || Math.abs(end - start) < 1000) to = from + DAY
-  else if (from > to) to += DAY
-  return { startTime: from, endTime: to }
-}
-
+import { DAILY } from '../../constants/auto-reply.constant'
+import type { PkgConfig } from '../../models/auto-reply.model'
+import { anchor } from '../../helpers/auto-reply.helper'
 
 @injectable()
 export default class AutoReplyService implements IAutoReplyService {
