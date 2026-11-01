@@ -11,6 +11,7 @@ import { ActionRow } from "@/app/profile/components/info/action-row";
 import { Button } from "@/shared/components/ui/button";
 import { Separator } from "@/shared/components/ui/separator";
 import { cn } from "@/shared/utils/shadcn";
+import { Img } from "@/shared/components/img";
 
 // Zalo PC shows sdob as "DD tháng MM, YYYY" when it is a full date, anything else as is
 const birthday = (sdob: string) => {
@@ -46,7 +47,7 @@ export function Info({
 
   return (
     <>
-      <div className="h-40 bg-muted">{p.cover && <img className="size-full object-cover" src={p.cover} alt="" />}</div>
+      <div className="h-40 bg-muted">{p.cover && <Img className="size-full object-cover" src={p.cover} />}</div>
       <div className="-mt-9 flex items-end gap-3 px-4">
         <div className="relative rounded-full ring-3 ring-popover">
           <Avatar src={p.avatar} name={p.displayName} size={80} />

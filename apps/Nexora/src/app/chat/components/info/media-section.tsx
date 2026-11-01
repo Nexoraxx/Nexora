@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
-import { FileTextIcon, LinkIcon, PlayIcon } from "lucide-react";
+import { FileTextIcon, LinkIcon, PlayIcon, VideoOffIcon } from "lucide-react";
 import { api } from "@/core/http/api";
 import { attach, fileSize, params } from "@/app/chat/utils/chat.utils";
 import { openExternal } from "@/core/tauri/native";
 import type { MediaItem } from "@/shared/types";
 import { Section } from "@/app/chat/components/info/info-section";
 import { Button } from "@/shared/components/ui/button";
+import { openViewer } from "@/app/file-viewer/services/file-viewer.service";
+import { fileFromUrl, getExtension } from "@/app/file-viewer/utils/file-viewer.utils";
+import { useMediaSrc } from "@/shared/hooks/use-media";
+import { Img } from "@/shared/components/img";
 
 const host = (href?: string) => {
   try {
@@ -16,7 +20,8 @@ const host = (href?: string) => {
 };
 
 // local history only, as Zalo PC (its media cloud is off by default); "Xem tất cả" loads up to 200
-export function MediaSection({ base, kind, title, preview }: { base: string; kind: "media" | "file" | "link"; title: string; preview: number }) {
+// accountId: E2EE and JPEG XL photos load through it
+export function MediaSection({ accountId, base, kind, title, preview }: { accountId: string; base: string; kind: "media" | "file" | "link"; title: string; preview: number }) {
   const [items, setItems] = useState<MediaItem[]>();
   const [all, setAll] = useState(false);
   useEffect(() => {
@@ -37,8 +42,12 @@ export function MediaSection({ base, kind, title, preview }: { base: string; kin
           {shown!.map((m) => {
             const c = attach(m.content);
             return (
-              <button key={m.msgId} className="relative aspect-square overflow-hidden rounded-md bg-muted" onClick={() => c.href && openExternal(c.href)}>
-                {(c.thumb || c.href) && <img className="size-full object-cover" src={c.thumb || c.href} alt="" />}
+              <button
+                key={m.msgId}
+                className="relative aspect-square overflow-hidden rounded-md bg-muted"
+                onClick={() => c.href && openViewer({ ...fileFromUrl(c.href), accountId })}
+              >
+                {(c.thumb || c.href) && <Thumb accountId={accountId} url={(c.thumb || c.href)!} video={m.msgType === "chat.video.msg"} />}
                 {m.msgType === "chat.video.msg" && <PlayIcon className="absolute inset-0 m-auto size-6 fill-white text-white drop-shadow" />}
               </button>
             );
@@ -48,9 +57,18 @@ export function MediaSection({ base, kind, title, preview }: { base: string; kin
         shown!.map((m) => {
           const c = attach(m.content);
           return (
-            <button key={m.msgId} className="flex w-full items-center gap-3 px-4 py-1.5 text-left hover:bg-muted" onClick={() => c.href && openExternal(c.href)}>
+            <button
+              key={m.msgId}
+              className="flex w-full items-center gap-3 px-4 py-1.5 text-left hover:bg-muted"
+              onClick={() =>
+                c.href &&
+                (kind === "file"
+                  ? openViewer({ name: c.title ?? "", ext: String(params(c).fileExt || getExtension(c.title ?? "")).toLowerCase(), size: Number(params(c).fileSize) || undefined, url: c.href, accountId })
+                  : openExternal(c.href))
+              }
+            >
               {kind === "link" && c.thumb ? (
-                <img className="size-10 shrink-0 rounded object-cover" src={c.thumb} alt="" />
+                <Img className="size-10 shrink-0 rounded object-cover" src={c.thumb} icon={LinkIcon} />
               ) : (
                 <span className="flex size-10 shrink-0 items-center justify-center rounded bg-muted [&_svg]:size-5 [&_svg]:text-muted-foreground">
                   {kind === "file" ? <FileTextIcon /> : <LinkIcon />}
@@ -73,4 +91,9 @@ export function MediaSection({ base, kind, title, preview }: { base: string; kin
       )}
     </Section>
   );
+}
+
+function Thumb({ accountId, url, video }: { accountId: string; url: string; video: boolean }) {
+  const src = useMediaSrc(accountId, url);
+  return <Img className="size-full object-cover" src={src} icon={video ? VideoOffIcon : undefined} />;
 }

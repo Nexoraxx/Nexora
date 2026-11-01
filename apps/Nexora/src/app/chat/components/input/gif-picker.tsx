@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/core/http/api";
 import type { Gif } from "@/shared/types";
 import { Input } from "@/shared/components/ui/input";
+import { Img } from "@/shared/components/img";
 
 // Zalo PC's GIF tab: "Xu hướng" until 2+ characters are typed, then search (200ms); more load at the bottom
 export function GifPicker({ accountId, onPick }: { accountId: string; onPick: (g: Gif) => void }) {
@@ -44,7 +45,7 @@ export function GifPicker({ accountId, onPick }: { accountId: string; onPick: (g
         ) : (
           items.map((g, i) => (
             <button key={`${g.id}-${i}`} className="h-24 overflow-hidden rounded bg-muted" onClick={() => onPick(g)}>
-              <img className="size-full object-cover" src={g.thumb} alt="GIF" loading="lazy" />
+              <Img className="size-full object-cover" src={g.thumb} alt="GIF" loading="lazy" />
             </button>
           ))
         )}

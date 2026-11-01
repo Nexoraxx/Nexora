@@ -8,9 +8,14 @@ import { splitMentions } from "@/shared/utils/text.utils";
 import type { TextStyle } from "@/shared/models/text.model";
 import { attach, fileSize, params, summary } from "@/app/chat/utils/chat.utils";
 import { E2EE } from "@/app/chat/constants/chat.constants";
-import { FileTextIcon, ListChecksIcon, LockIcon, MapPinIcon } from "lucide-react";
+import { useState } from "react";
+import { LinkIcon, ListChecksIcon, LockIcon, MapPinIcon, MicOffIcon, StickerIcon, VideoOffIcon } from "lucide-react";
+import { Img, Placeholder } from "@/shared/components/img";
 import { cn } from "@/shared/utils/shadcn";
 import { useMediaSrc } from "@/shared/hooks/use-media";
+import { FileBubble } from "@/app/file-viewer/components/bubble/file-bubble";
+import { openViewer } from "@/app/file-viewer/services/file-viewer.service";
+import { fileFromUrl, getExtension } from "@/app/file-viewer/utils/file-viewer.utils";
 
 // Zalo PC's sticker image endpoint; the built-in "Củ hành" set (category 0) lives on its static domain
 const stickerImage = (id: unknown, catId?: unknown) =>
@@ -58,7 +63,7 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
     case "chat.doodle":
       return <Photo accountId={me} href={c.href} thumb={c.thumb} />;
     case "chat.sticker":
-      return <img className="size-30" src={stickerImage(c.id, c.catId)} alt="sticker" />;
+      return <Img className="size-30" fallbackClassName="rounded-md" src={stickerImage(c.id, c.catId)} alt="sticker" icon={StickerIcon} />;
     case "chat.video.msg":
       return <Media kind="video" accountId={me} href={c.href} thumb={c.thumb} />;
     case "chat.voice":
@@ -74,11 +79,7 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
             </div>
           </div>
         );
-      return (
-        <button className={FILE} onClick={() => c.href && openExternal(c.href)}>
-          <FileTextIcon className="size-4 shrink-0 text-muted-foreground" /> <span>{c.title}</span> <span className="shrink-0 text-xs text-muted-foreground">{fileSize(params(c).fileSize)}</span>
-        </button>
-      );
+      return <FileBubble file={{ name: c.title ?? "", ext: String(params(c).fileExt || getExtension(c.title ?? "")).toLowerCase(), size: Number(params(c).fileSize) || undefined, url: c.href, accountId: me }} />;
     case "chat.location.new": {
       const p = params(c);
       const where = p.latitude != null ? `${p.latitude},${p.longitude}` : c.title || c.description || "";
@@ -120,7 +121,7 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
       if (c.action !== "recommened.link") return <i className="text-xs text-muted-foreground">{summary(m.msgType, m.content)}</i>;
       return (
         <button className={FILE} onClick={() => c.href && openExternal(c.href)}>
-          {c.thumb && <img className="size-16 shrink-0 rounded object-cover" src={c.thumb} alt="" />}
+          {c.thumb && <Img className="size-16 shrink-0 rounded object-cover" src={c.thumb} icon={LinkIcon} />}
           <div>
             <b>{c.title || c.href}</b>
             {c.description && <div className="text-xs text-muted-foreground">{c.description}</div>}
@@ -137,16 +138,26 @@ export function Content({ m, me, onProfile, onPoll }: { m: MessageRow; me: strin
 // E2EE photos/videos/voice are AES-encrypted blobs: useMediaSrc fetches them through the decrypting proxy; plaintext
 // urls pass straight through. A hook can't live inside the switch, so media gets its own components.
 function Photo({ accountId, href, thumb }: { accountId: string; href?: string; thumb?: string }) {
-  const src = useMediaSrc(accountId, href || thumb);
-  return <img className="max-h-80 max-w-70 cursor-pointer rounded-md bg-muted" src={src} alt="" onClick={() => (href || thumb) && openExternal((href || thumb)!)} />;
+  const url = href || thumb;
+  const src = useMediaSrc(accountId, url);
+  return <Img className="max-h-80 max-w-70 cursor-pointer rounded-md bg-muted" fallbackClassName="size-40" src={url ? src : null} onClick={() => url && openViewer({ ...fileFromUrl(url), accountId })} />;
 }
 
 function Media({ kind, accountId, href, thumb }: { kind: "video" | "audio"; accountId: string; href?: string; thumb?: string }) {
   const src = useMediaSrc(accountId, href);
   const poster = useMediaSrc(accountId, thumb);
+  const [broken, setBroken] = useState(false);
+  if (!href || src === null || broken)
+    return kind === "video" ? (
+      <Placeholder icon={VideoOffIcon} label="Không phát được video" className="size-40 rounded-md" />
+    ) : (
+      <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
+        <MicOffIcon className="size-3.5" /> Không phát được tin nhắn thoại
+      </span>
+    );
   return kind === "video" ? (
-    <video className="max-h-80 max-w-70 rounded-md" src={src} poster={poster || undefined} controls preload="metadata" />
+    <video className="max-h-80 max-w-70 rounded-md" src={src || undefined} poster={poster || undefined} controls preload="metadata" onError={() => setBroken(true)} />
   ) : (
-    <audio src={src} controls />
+    <audio src={src || undefined} controls onError={() => setBroken(true)} />
   );
 }

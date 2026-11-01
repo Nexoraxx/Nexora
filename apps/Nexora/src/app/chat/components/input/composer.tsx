@@ -24,11 +24,12 @@ import { PendingFiles } from "@/app/chat/components/input/pending-files";
 import { ToolbarDialog } from "@/app/chat/components/toolbar/toolbar-editor";
 import { COMPOSER_BAR, COMPOSER_TOOLS, GROUP_ONLY } from "@/app/chat/constants/toolbar.constants";
 import { arrange, useLayout } from "@/shared/hooks/use-toolbar";
-import { PlusIcon, Settings2Icon, UsersIcon, XIcon } from "lucide-react";
+import { LinkIcon, PlusIcon, Settings2Icon, UsersIcon, XIcon } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { cn } from "@/shared/utils/shadcn";
+import { Img } from "@/shared/components/img";
 
 // files behind pasted paths, read by the server (same machine)
 const localFiles = (accountId: string, paths: string[]) =>
@@ -273,7 +274,7 @@ export function Composer({
             <span className="px-1 text-xs text-muted-foreground">Đang tải xem trước…</span>
           ) : preview.data ? (
             <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => openExternal(preview.data!.href)}>
-              {preview.data.thumb && <img className="size-16 shrink-0 rounded object-cover" src={preview.data.thumb} alt="" />}
+              {preview.data.thumb && <Img className="size-16 shrink-0 rounded object-cover" src={preview.data.thumb} icon={LinkIcon} />}
               <div className="min-w-0">
                 <div className="truncate font-semibold">{preview.data.title || preview.data.href}</div>
                 {preview.data.desc && <div className="line-clamp-2 text-xs text-muted-foreground">{preview.data.desc}</div>}

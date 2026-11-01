@@ -3,9 +3,10 @@ import { api } from "@/core/http/api";
 import type { Gif, Sticker, StickerCategory } from "@/shared/types";
 import { GifPicker } from "@/app/chat/components/input/gif-picker";
 import { StickerCell } from "@/app/chat/components/input/sticker-cell";
-import { ClockIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { ClockIcon, PlusIcon, SearchIcon, StickerIcon } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
+import { Img } from "@/shared/components/img";
 
 type StickerTab = { kind: "recent" } | { kind: "category"; id: number } | { kind: "search" } | { kind: "store" } | { kind: "gif" };
 
@@ -54,7 +55,7 @@ export function StickerPicker({ accountId, onPick, onGif }: { accountId: string;
         <div className="mt-1.5 h-50 overflow-y-auto">
           {store.map((c) => (
             <div key={c.id} className="flex items-center gap-3 rounded-lg p-2 hover:bg-muted">
-              <img className="size-10" src={c.iconUrl} alt="" />
+              <Img className="size-10 rounded" src={c.iconUrl} icon={StickerIcon} />
               <div className="min-w-0 flex-1">
                 <div>{c.name}</div>
                 <div className="text-xs text-muted-foreground">{c.totalImage} sticker</div>
@@ -91,7 +92,7 @@ export function StickerPicker({ accountId, onPick, onGif }: { accountId: string;
             title={c.name}
             onClick={() => setTab({ kind: "category", id: c.id })}
           >
-            <img className="size-6" src={c.iconUrl} alt={c.name} />
+            <Img className="size-6 rounded" src={c.iconUrl} alt={c.name} icon={StickerIcon} />
           </Button>
         ))}
         <Button variant={isTab({ kind: "search" }) ? "secondary" : "ghost"} size="icon" title="Tìm sticker" onClick={() => (setItems([]), setTab({ kind: "search" }))}>

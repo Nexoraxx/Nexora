@@ -39,6 +39,7 @@ import { TOKENS } from '../../../../di/tokens'
 import type IMessageRepository from '../../repositories/interfaces/message-repository'
 import type IMessageService from '../interfaces/message-service'
 import { E2eeService } from '../../../../third-party/signal/e2ee-service'
+import { Sync2Service } from '../../../../third-party/sync2/sync2-service'
 import { E2EE_STATUS, type Decrypted, type E2eeMessage } from '../../../../third-party/signal/e2ee-message-receiver'
 import {
   OUT_EVENTS,
@@ -80,6 +81,7 @@ export default class MessageService implements IMessageService {
     @inject(TOKENS.ContactService) private contacts: IContactService,
     @inject(TOKENS.ConversationService) private conversations: IConversationService,
     @inject(E2eeService) private e2ee: E2eeService,
+    @inject(Sync2Service) sync: Sync2Service,
   ) {
     const guard =
       <A extends unknown[]>(name: string, fn: (...args: A) => unknown) =>
@@ -101,6 +103,7 @@ export default class MessageService implements IMessageService {
     zca.on('group_event', guard('group_event', (id: string, e: GroupEvent) => this.onGroupEvent(id, e)))
     e2ee.on('messages', guard('e2ee_offline', (id: string, ms: TMessage[]) => this.onE2eeOffline(id, ms)))
     e2ee.on('changed', (id: string) => broadcast({ type: 'threads', accountId: id }))
+    sync.on('messages', guard('sync', (id: string, ms: Message[], readUpTo: Map<string, string>) => this.onSynced(id, ms, readUpTo)))
   }
 
   // ===== Reads =====
@@ -628,6 +631,15 @@ export default class MessageService implements IMessageService {
     broadcast({ type: 'threads', accountId })
     this.learn(accountId, saved)
     await this.fetchReadMarkers(accountId)
+  }
+
+  // "Đồng bộ tin nhắn" from the phone: messages this device doesn't have, or has only from an earlier sync (no sender
+  // name); the server's copies stay. Read up to where they were read on the phone.
+  private onSynced(accountId: string, msgs: Message[], readUpTo: Map<string, string>) {
+    const { saved } = this.store(accountId, msgs.filter((m) => !this.messages.find(accountId, String(m.data.msgId))?.dName))
+    for (const [threadId, msgId] of readUpTo) this.messages.markRead(accountId, threadId, msgId)
+    if (saved.length) broadcast({ type: 'threads', accountId })
+    this.learn(accountId, saved)
   }
 
   private requestOffline(accountId: string) {

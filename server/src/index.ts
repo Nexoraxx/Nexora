@@ -33,6 +33,7 @@ import { stickerRoutes } from './modules/stickers'
 import type IStickerService from './modules/stickers/services/interfaces/sticker-service'
 import { todoRoutes } from './modules/todos'
 import type ITodoService from './modules/todos/services/interfaces/todo-service'
+import { Sync2Service } from './third-party/sync2/sync2-service'
 
 // resolve order = order services subscribe to Zalo events
 const container = createContainer()
@@ -50,6 +51,7 @@ const quickMessages = container.get<IQuickMessageService>(TOKENS.QuickMessageSer
 const autoReplies = container.get<IAutoReplyService>(TOKENS.AutoReplyService)
 const todos = container.get<ITodoService>(TOKENS.TodoService)
 const bulkSends = container.get<IBulkSendService>(TOKENS.BulkSendService)
+const sync = container.get(Sync2Service)
 
 const app = new Hono()
 
@@ -61,7 +63,7 @@ app.get('/events', eventsWebSocket)
 app.route('/accounts', accountRoutes(accounts))
 app.route('/', bulkTemplateRoutes(bulkSends))
 app.route('/accounts/:accountId', contactRoutes(contacts))
-app.route('/accounts/:accountId', messageRoutes(messages))
+app.route('/accounts/:accountId', messageRoutes(messages, sync))
 app.route('/accounts/:accountId', stickerRoutes(stickers))
 app.route('/accounts/:accountId', conversationRoutes(conversations, messages))
 app.route('/accounts/:accountId', pinRoutes(pins))
