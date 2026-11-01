@@ -66,11 +66,10 @@ jobs:
           projectPath: apps/Nexora
           tauriScript: bun run tauri
           args: --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
-          # empty on "Run workflow": build only, no release
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          tagName: v__VERSION__
           releaseName: Nexora __VERSION__
           releaseBody: Tải bộ cài cho máy của bạn ở mục Assets bên dưới.
-          releaseDraft: true
+          releaseDraft: false
 
       # one artifact per installer, downloaded as the file itself instead of a zip (archive: false takes a single file,
       # named after it)
