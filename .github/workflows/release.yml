@@ -1,20 +1,39 @@
 # Installers for Windows, macOS (Apple Silicon + Intel) and Linux.
-# - push a tag "v0.1.0" (same as "version" in apps/Nexora/src-tauri/tauri.conf.json): a draft GitHub Release with
-#   every installer attached, published by hand after a check
-# - every build: each installer is also an artifact of the run (Actions tab), "Run workflow" builds without a release
+# - every push to main (or "Run workflow"): builds every installer, each one also an artifact of the run (Actions tab)
+# - if "version" in apps/Nexora/src-tauri/tauri.conf.json has no tag "v<version>" yet: the tag and a published GitHub
+#   Release with every installer attached are created; already released → build only (bump the version to release)
 # Not signed: Windows SmartScreen warns on first run; macOS needs right click → Open (or `xattr -cr Nexora.app`).
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# runs queue instead of overlapping, so two pushes of a new version can't both create its release
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          v=$(jq -r .version apps/Nexora/src-tauri/tauri.conf.json)
+          if git ls-remote --exit-code --tags origin "refs/tags/v$v" > /dev/null; then r=false; else r=true; fi
+          echo "v$v release=$r"
+          echo "release=$r" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -66,7 +85,8 @@ jobs:
           projectPath: apps/Nexora
           tauriScript: bun run tauri
           args: --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
-          tagName: v__VERSION__
+          # empty tagName = build only, no release
+          tagName: ${{ needs.version.outputs.release == 'true' && 'v__VERSION__' || '' }}
           releaseName: Nexora __VERSION__
           releaseBody: Tải bộ cài cho máy của bạn ở mục Assets bên dưới.
           releaseDraft: false

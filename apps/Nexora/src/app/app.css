@@ -6,6 +6,13 @@
     #f1f4f9;
 }
 
+.dark .conversation {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(30, 58, 138, 0.2) 0, transparent 45%),
+    radial-gradient(circle at 95% 100%, rgba(15, 23, 42, 0.35) 0, transparent 50%),
+    oklch(0.13 0 0);
+}
+
 /* the library sets filter inline on .glass__warp (see Glass.tsx) */
 .no-refraction .glass__warp {
   filter: none !important;

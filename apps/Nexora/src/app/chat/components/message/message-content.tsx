@@ -21,7 +21,7 @@ import { fileFromUrl, getExtension } from "@/app/file-viewer/utils/file-viewer.u
 const stickerImage = (id: unknown, catId?: unknown) =>
   catId === 0 ? `https://stc-chat.zdn.vn/images/stickers/default/${id}.gif` : `https://api.zaloapp.com/api/emoticon/sticker/webpc?size=130&eid=${id}`;
 
-const CARD = "flex max-w-80 items-center gap-2 rounded-md border bg-white px-3 py-1.5 text-left";
+const CARD = "flex max-w-80 items-center gap-2 rounded-md border bg-white dark:bg-card dark:border-border/60 px-3 py-1.5 text-left";
 const FILE = `${CARD} hover:bg-muted`;
 
 export function Content({

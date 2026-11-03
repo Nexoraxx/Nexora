@@ -15,10 +15,11 @@ import { Starred } from "@/app/starred";
 import { SettingsDialog } from "@/app/settings";
 import { Todos } from "@/app/todo";
 import { BulkProgress, BulkSend } from "@/app/bulk-send";
-import { CheckIcon, ChevronDownIcon, EllipsisIcon, InboxIcon, LogOutIcon, PlusIcon, QrCodeIcon, RefreshCwIcon, Settings2Icon, SettingsIcon, UserIcon, WifiOffIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, EllipsisIcon, InboxIcon, LogOutIcon, MoonIcon, PlusIcon, QrCodeIcon, RefreshCwIcon, Settings2Icon, SettingsIcon, SunIcon, UserIcon, WifiOffIcon } from "lucide-react";
 import { ToolbarDialog } from "@/app/chat/components/toolbar/toolbar-editor";
 import { VIEW_BAR, VIEW_TOOLS } from "@/app/chat/constants/toolbar.constants";
 import { arrange, useLayout } from "@/shared/hooks/use-toolbar";
+import { useTheme } from "@/shared/hooks/use-theme";
 import { accountTag } from "@/shared/components/account-tag";
 import { ErrorBanner } from "@/shared/components/error-banner";
 import { Button } from "@/shared/components/ui/button";
@@ -85,6 +86,7 @@ export default function App() {
         .catch(() => {});
   }, [onlineIds]);
   const layout = useLayout(VIEW_BAR);
+  const { isDark, toggle: toggleTheme } = useTheme();
   const [customizing, setCustomizing] = useState(false);
   const [target, setTarget] = useState<ChatTarget>();
   // userId whose "Thông tin tài khoản" is open; the account's own id opens its own profile
@@ -97,6 +99,21 @@ export default function App() {
   const open = useRef<string | undefined>(undefined);
   const { threads, settings } = useThreads(accounts.map((a) => a.id));
   const unread = (id: string) => unreadCount(threads[id], settings[id]);
+
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const [sidebarScrollUp, setSidebarScrollUp] = useState(false);
+  const [sidebarScrollDown, setSidebarScrollDown] = useState(false);
+
+  const updateSidebarScroll = () => {
+    const el = sidebarScrollRef.current;
+    if (!el) return;
+    setSidebarScrollUp(el.scrollTop > 4);
+    setSidebarScrollDown(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+  };
+
+  useEffect(() => {
+    updateSidebarScroll();
+  }, [accounts.length]);
 
   const loadAccounts = () =>
     api<Account[]>("/accounts")
@@ -180,48 +197,66 @@ export default function App() {
 
   return (
     <div className="flex h-screen text-sm">
-      <nav className="flex w-[68px] shrink-0 flex-col border-r bg-sidebar">
-        {/* accounts scroll; the settings button stays pinned at the bottom */}
-        <div className="flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto py-3">
+      <nav className="flex w-[68px] shrink-0 flex-col border-r bg-sidebar select-none">
+        {/* pinned "Tất cả" button at top if multi-account */}
         {accounts.length > 1 && (
-          <>
+          <div className="flex flex-col items-center pt-3 pb-2.5 shrink-0 border-b border-border/40">
             <button
-              className={cn("relative rounded-[14px] ring-offset-2 ring-offset-sidebar", all && "ring-2 ring-primary")}
+              className={cn("relative rounded-[14px] ring-offset-2 ring-offset-sidebar cursor-pointer transition-transform active:scale-95", all && "ring-2 ring-primary")}
               title="Tất cả tài khoản"
               onClick={() => (setSelected(ALL), setTarget(undefined), setProfileOf(undefined))}
             >
+              {all && <span className="absolute -left-2.5 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-primary transition-all duration-200" />}
               <span className={cn("grid size-11 place-items-center rounded-[14px] bg-muted text-muted-foreground transition-colors hover:text-foreground", all && "bg-primary/10 text-primary")}>
                 <InboxIcon className="size-5" />
               </span>
               {badge(accounts.reduce((n, a) => n + unread(a.id), 0))}
             </button>
-            <span className="w-8 border-t" />
-          </>
+          </div>
         )}
-        {accounts.map((a) => (
-          <button
-            key={a.id}
-            className={cn("relative rounded-full ring-offset-2 ring-offset-sidebar", a.id === selected && "ring-2 ring-primary")}
-            title={`${a.name} · ${STATUS_TEXT[a.status]}`}
-            onClick={() => (setSelected(a.id), setTarget(undefined), setProfileOf(undefined))}
+
+        {/* accounts scroll smoothly with top/bottom fade hints without scrollbar clipping */}
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          {sidebarScrollUp && (
+            <div className="pointer-events-none absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-sidebar to-transparent z-10" />
+          )}
+          <div
+            ref={sidebarScrollRef}
+            onScroll={updateSidebarScroll}
+            className="flex min-h-0 flex-1 flex-col items-center gap-2.5 overflow-y-auto py-2.5 scrollbar-none"
           >
-            <Avatar src={a.avatar} name={a.name} size={44} />
-            <span className={cn("absolute right-0 bottom-0 size-3 rounded-full border-2 border-sidebar", STATUS_DOT[a.status])} />
-            {badge(unread(a.id))}
-          </button>
-        ))}
-        <Button
-          variant="ghost"
-          className="size-11 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary hover:bg-primary/5 hover:text-primary"
-          title="Thêm tài khoản"
-          onClick={startQr}
-        >
-          <PlusIcon className="size-5" />
-        </Button>
+            {accounts.map((a) => {
+              const isSelected = a.id === selected;
+              return (
+                <button
+                  key={a.id}
+                  className={cn("relative rounded-full ring-offset-2 ring-offset-sidebar shrink-0 cursor-pointer transition-transform active:scale-95", isSelected && "ring-2 ring-primary")}
+                  title={`${a.name} · ${STATUS_TEXT[a.status]}`}
+                  onClick={() => (setSelected(a.id), setTarget(undefined), setProfileOf(undefined))}
+                >
+                  {isSelected && <span className="absolute -left-2.5 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-primary transition-all duration-200" />}
+                  <Avatar src={a.avatar} name={a.name} size={44} />
+                  <span className={cn("absolute right-0 bottom-0 size-3 rounded-full border-2 border-sidebar", STATUS_DOT[a.status])} />
+                  {badge(unread(a.id))}
+                </button>
+              );
+            })}
+            <Button
+              variant="ghost"
+              className="size-11 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary hover:bg-primary/5 hover:text-primary shrink-0 cursor-pointer"
+              title="Thêm tài khoản"
+              onClick={startQr}
+            >
+              <PlusIcon className="size-5" />
+            </Button>
+          </div>
+          {sidebarScrollDown && (
+            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-sidebar to-transparent z-10" />
+          )}
         </div>
         {accounts.length > 0 && (
           // settings and everything about an account, as Zalo PC's gear at the bottom of its bar
-          <div className="flex justify-center border-t py-3">
+          <div className="flex justify-center border-t py-3 shrink-0">
             <DropdownMenu onOpenChange={(o) => !o && setConfirmLogout(false)}>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -248,6 +283,11 @@ export default function App() {
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={toggleTheme}>
+                      {isDark ? <SunIcon className="size-4 text-amber-400" /> : <MoonIcon className="size-4" />}
+                      <span>Giao diện: {isDark ? "Tối (Dark)" : "Sáng (Light)"}</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
                       variant="destructive"
                       onSelect={(e) => {
@@ -263,12 +303,19 @@ export default function App() {
                   <>
                     {/* "Tất cả": settings belong to one account, so picking one switches to it */}
                     <DropdownMenuLabel>Cài đặt cho tài khoản</DropdownMenuLabel>
-                    {accounts.map((a) => (
-                      <DropdownMenuItem key={a.id} onSelect={() => (setSelected(a.id), setTarget(undefined), setSettingsOpen(true))}>
-                        <Avatar src={a.avatar} name={a.name} size={20} />
-                        <span className="truncate">{a.name}</span>
-                      </DropdownMenuItem>
-                    ))}
+                    <div className="max-h-72 overflow-y-auto space-y-0.5">
+                      {accounts.map((a) => (
+                        <DropdownMenuItem key={a.id} onSelect={() => (setSelected(a.id), setTarget(undefined), setSettingsOpen(true))}>
+                          <Avatar src={a.avatar} name={a.name} size={20} />
+                          <span className="truncate">{a.name}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={toggleTheme}>
+                      {isDark ? <SunIcon className="size-4 text-amber-400" /> : <MoonIcon className="size-4" />}
+                      <span>Giao diện: {isDark ? "Tối (Dark)" : "Sáng (Light)"}</span>
+                    </DropdownMenuItem>
                   </>
                 )}
               </DropdownMenuContent>
@@ -329,23 +376,42 @@ export default function App() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              {account ? (
-                <button
-                  className="ml-auto flex min-w-0 items-center gap-2 rounded-md py-1 pr-1 pl-2 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                  title={`Thông tin tài khoản · ${STATUS_TEXT[account.status]}`}
-                  onClick={() => openProfile(account.id, account.id)}
+              <div className="ml-auto flex items-center gap-2">
+                {account ? (
+                  <button
+                    className="flex min-w-0 items-center gap-2 rounded-md py-1 pr-1 pl-2 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+                    title={`Thông tin tài khoản · ${STATUS_TEXT[account.status]}`}
+                    onClick={() => openProfile(account.id, account.id)}
+                  >
+                    <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[account.status])} />
+                    <span className="truncate">{account.name}</span>
+                    <Avatar src={account.avatar} name={account.name} size={24} />
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                    <InboxIcon className="size-4 text-primary" />
+                    Tất cả tài khoản · {accounts.filter((a) => a.status === "online").length}/{accounts.length} đang hoạt động
+                  </span>
+                )}
+
+                <div className="h-4 w-px bg-border/60" />
+
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  title={isDark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
+                  onClick={toggleTheme}
+                  className="size-7 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
                 >
-                  <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[account.status])} />
-                  <span className="truncate">{account.name}</span>
-                  <Avatar src={account.avatar} name={account.name} size={24} />
-                </button>
-              ) : (
-                <span className="ml-auto flex items-center gap-1.5 text-[13px] text-muted-foreground">
-                  <InboxIcon className="size-4 text-primary" />
-                  Tất cả tài khoản · {accounts.filter((a) => a.status === "online").length}/{accounts.length} đang hoạt động
-                </span>
-              )}
-              <BulkProgress accounts={accounts} onOpen={() => setView("bulk")} />
+                  {isDark ? (
+                    <SunIcon className="size-3.5 text-amber-400 fill-amber-400/20" />
+                  ) : (
+                    <MoonIcon className="size-3.5" />
+                  )}
+                </Button>
+
+                <BulkProgress accounts={accounts} onOpen={() => setView("bulk")} />
+              </div>
             </header>
             {account && DISCONNECTED[account.status] && (
               <div className="flex items-center gap-2.5 border-b bg-amber-50 px-4 py-2 text-[13px] text-amber-900">
