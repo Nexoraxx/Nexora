@@ -1,39 +1,22 @@
 # Installers for Windows, macOS (Apple Silicon + Intel) and Linux.
-# - every push to main (or "Run workflow"): builds every installer, each one also an artifact of the run (Actions tab)
-# - if "version" in apps/Nexora/src-tauri/tauri.conf.json has no tag "v<version>" yet: the tag and a published GitHub
-#   Release with every installer attached are created; already released → build only (bump the version to release)
+# - push a tag "v<version>" (e.g. `git tag v0.2.0 && git push origin v0.2.0`): builds every installer with that version
+#   (overrides "version" in tauri.conf.json) and publishes a GitHub Release for the tag with every installer attached
+# - push to main / "Run workflow": build only, each installer is an artifact of the run (Actions tab)
+# MSI needs a numeric version: v1.2.3 or v1.2.3-4, not v1.2.3-alpha.
 # Not signed: Windows SmartScreen warns on first run; macOS needs right click → Open (or `xattr -cr Nexora.app`).
 name: Release
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# runs queue instead of overlapping, so two pushes of a new version can't both create its release
-concurrency:
-  group: release
-  cancel-in-progress: false
-
 jobs:
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      release: ${{ steps.check.outputs.release }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: check
-        run: |
-          v=$(jq -r .version apps/Nexora/src-tauri/tauri.conf.json)
-          if git ls-remote --exit-code --tags origin "refs/tags/v$v" > /dev/null; then r=false; else r=true; fi
-          echo "v$v release=$r"
-          echo "release=$r" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +34,13 @@ jobs:
       BUNDLE: apps/Nexora/src-tauri/target/${{ matrix.target }}/release/bundle
     steps:
       - uses: actions/checkout@v7
+
+      - name: Version from tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          f=apps/Nexora/src-tauri/tauri.conf.json
+          jq --arg v "${GITHUB_REF_NAME#v}" '.version = $v' $f > tmp.json && mv tmp.json $f
 
       - name: Linux build dependencies
         if: runner.os == 'Linux'
@@ -86,7 +76,7 @@ jobs:
           tauriScript: bun run tauri
           args: --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
           # empty tagName = build only, no release
-          tagName: ${{ needs.version.outputs.release == 'true' && 'v__VERSION__' || '' }}
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Nexora __VERSION__
           releaseBody: Tải bộ cài cho máy của bạn ở mục Assets bên dưới.
           releaseDraft: false

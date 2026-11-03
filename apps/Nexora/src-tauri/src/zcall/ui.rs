@@ -52,6 +52,9 @@ impl Ui {
         window.set_default_size(if video { 720 } else { 360 }, if video { 520 } else { 260 });
         window.set_position(gtk::WindowPosition::Center);
         window.set_keep_above(incoming);
+        // X11 taskbars read the icon off the window; Wayland maps app_id "nexora" to the installed .desktop instead
+        let icon = std::io::Cursor::new(include_bytes!("../../icons/128x128@2x.png"));
+        window.set_icon(Pixbuf::from_read(icon).ok().as_ref());
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
         root.set_border_width(16);
