@@ -18,7 +18,7 @@ import { api } from "@/core/http/api";
 import type { Account, ConversationSettings, Friend, Label } from "@/shared/types";
 import type { Preview, Template } from "@/app/bulk-send/models/bulk-send.model";
 import { MISSING_AS, MUTED, SPEEDS, VARIABLES, type Speed } from "@/app/bulk-send/constants/bulk-send.constants";
-import { duration, unknownVariables } from "@/app/bulk-send/utils/bulk-send.utils";
+import { duration, problemsIn } from "@/app/bulk-send/utils/bulk-send.utils";
 import { VariableTextarea } from "@/app/bulk-send/components/variable-textarea";
 import { Avatar } from "@/app/profile/components/avatar/user-avatar";
 import { Button } from "@/shared/components/ui/button";
@@ -163,7 +163,7 @@ export function CreateRun({
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const canProceedFromStep1 = body.trim().length > 0 && unknownVariables(body).length === 0;
+  const canProceedFromStep1 = body.trim().length > 0 && problemsIn(body).length === 0;
 
   const goToPreview = () => {
     if (picked.length === 0) return;

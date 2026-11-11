@@ -1,5 +1,5 @@
 import "./app.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/core/http/api";
 import { notify } from "@/core/tauri/native";
 import { onEvent } from "@/core/websocket/events";
@@ -178,7 +178,8 @@ export default function App() {
   open.current = chatAccount && view === "chat" && target ? `${chatAccount}:${target.threadId}` : undefined;
   const run = (p: Promise<unknown>) => p.catch((e) => setError(e.message));
   // the accounts on screen: the open one, or every account on "Tất cả" (lists merged, rows tagged)
-  const shown = account ? [account] : all ? accounts : [];
+  // memoized: the conversation list recomputes only when its inputs change
+  const shown = useMemo(() => (account ? [account] : all ? accounts : []), [account, all, accounts]);
   const tagOf = all ? (id: string) => accountTag(accounts, id) : undefined;
   const profileAccount = profileIn ?? chatAccount;
   // rows of contacts, starred and todos carry their account: the conversation opens as that account
@@ -425,7 +426,7 @@ export default function App() {
             {view === "chat" ? (
               <Chat
                 key={account?.id ?? ALL}
-                accounts={account ? [account] : accounts}
+                accounts={shown.length ? shown : accounts}
                 threads={threads}
                 settings={settings}
                 todo={todoOn}

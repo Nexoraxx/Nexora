@@ -13,16 +13,20 @@
     oklch(0.13 0 0);
 }
 
-/* the library sets filter inline on .glass__warp (see Glass.tsx) */
-.no-refraction .glass__warp {
-  filter: none !important;
+/* Rows of the message and conversation lists: off screen they skip layout and paint (the browser's own
+   virtualization), sized by their last rendered height ("auto") or a guess until first shown. The message list is
+   column-reverse, so an older row growing to its real height pushes upward, away from what's on screen.
+   ponytail: the rows stay in the DOM; a windowed list (@tanstack/react-virtual) if histories of thousands still lag */
+.offscreen-skip {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+  /* the containment clips paint at the box: room for bubble shadows and the mention ring */
+  overflow-clip-margin: 6px;
 }
-
-/* liquid-glass-react animates its layers' size and position inline (0.2s); a bar that grows would have its rim
-   slide after the content, so GlassBar resizes them all at once instead */
-.glass-dock > *,
-.glass-dock .glass {
-  transition: none !important;
+/* the hover toolbar sits above the row and an open menu's trigger in it: shown unclipped */
+.offscreen-skip:hover,
+.offscreen-skip:has([data-state="open"]) {
+  content-visibility: visible;
 }
 
 /* One cell of Zalo's emoji sprite (51 columns; positions are percentages). The character stays inside,
@@ -63,5 +67,13 @@
 @keyframes sticker-strip {
   to {
     background-position: calc(-64px * var(--frames)) 0;
+  }
+}
+
+/* Reduced motion: loading pulses, fade-ins and enter slides stop; the end state shows at once */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-in {
+    animation: none !important;
   }
 }

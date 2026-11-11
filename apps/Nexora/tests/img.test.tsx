@@ -12,7 +12,8 @@ test("a remote image that can't load shows a placeholder tile with its icon; oth
   expect(broken).toContain("lucide-sticker");
   expect(broken).not.toContain("<img");
 
-  expect(renderToStaticMarkup(<Img src="https://x/a.jpg" className="size-10" />)).toContain('<img src="https://x/a.jpg" alt="" class="size-10"/>');
+  // until it has loaded, the image's box pulses as a skeleton
+  expect(renderToStaticMarkup(<Img src="https://x/a.jpg" className="size-10" />)).toContain('<img src="https://x/a.jpg" alt="" class="size-10 animate-pulse bg-muted"/>');
   // still loading ("") is an image without a source yet, not a failure
-  expect(renderToStaticMarkup(<Img src="" />)).toBe('<img alt=""/>');
+  expect(renderToStaticMarkup(<Img src="" />)).toBe('<img alt="" class="animate-pulse bg-muted"/>');
 });

@@ -1,16 +1,15 @@
 import { z } from 'zod'
-import { unknownVariables } from '../../helpers/template.helper'
+import { problemsIn } from '../../helpers/template.helper'
 
-// as Zalo PC's message box: up to 2800 UTF-8 bytes, line breaks as \n. Unknown {{keys}} are refused so a customer
-// never reads "{{nmae}}"
+// as Zalo PC's message box: up to 2800 UTF-8 bytes, line breaks as \n. Unknown {{keys}} and filters are refused so a
+// customer never reads "{{nmae}}"
 const Body = z
   .string()
   .transform((s) => s.replace(/\r\n/g, '\n').trim())
   .refine((s) => s.length > 0, 'Nhập nội dung tin nhắn')
   .refine((s) => Buffer.byteLength(s) <= 2800, 'Bạn đã nhập quá số kí tự cho phép')
   .superRefine((s, ctx) => {
-    const bad = unknownVariables(s)
-    if (bad.length) ctx.addIssue({ code: 'custom', message: `Không có biến ${bad.map((k) => `{{${k}}}`).join(', ')}` })
+    for (const message of problemsIn(s)) ctx.addIssue({ code: 'custom', message })
   })
 
 export const TemplateRequest = z.object({ name: z.string().trim().min(1, 'Nhập tên mẫu').max(60), body: Body })

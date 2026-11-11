@@ -18,14 +18,18 @@ const showsJxl = () =>
     img.src = JXL_PIXEL;
   }));
 
-// where the webview can't, decoded in a worker
-
-let worker: Worker | undefined;
+// Decoded in workers: where the webview can't show JPEG XL, and for chat bubbles everywhere. Zalo's "thumb" of a JXL
+// photo is the full photo itself, and an <img> keeps it decoded at full size: an album of 30 phone photos held
+// gigabytes and filled in one by one. The workers scale bubbles down to `max` px and hand back a JPEG.
+const POOL = Math.max(1, Math.min(4, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
+const workers: Worker[] = [];
 let nextId = 0;
 const waiting = new Map<number, { resolve: (b: Blob) => void; reject: (e: Error) => void }>();
-function decodeJxl(bytes: ArrayBuffer): Promise<Blob> {
+function decodeJxl(bytes: ArrayBuffer, max = 0): Promise<Blob> {
+  const id = nextId++;
+  let worker = workers[id % POOL];
   if (!worker) {
-    worker = new Worker(new URL("../workers/jxl.worker.ts", import.meta.url), { type: "module" });
+    worker = workers[id % POOL] = new Worker(new URL("../workers/jxl.worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = ({ data }: MessageEvent<{ id: number; blob?: Blob; error?: string }>) => {
       const w = waiting.get(data.id);
       waiting.delete(data.id);
@@ -33,31 +37,36 @@ function decodeJxl(bytes: ArrayBuffer): Promise<Blob> {
       else w?.reject(new Error(data.error));
     };
   }
-  const id = nextId++;
   return new Promise((resolve, reject) => {
     waiting.set(id, { resolve, reject });
-    worker!.postMessage({ id, bytes }, [bytes]);
+    worker.postMessage({ id, bytes, max }, [bytes]);
   });
 }
 
-// object URL per media url: a JXL decode is costly and a thread shows the same photos over and over.
+// object URL per media url (and size): a JXL decode is costly and a thread shows the same photos over and over.
 // ponytail: plain LRU of 300, revoked on eviction; size it by bytes if memory shows up
 const loaded = new Map<string, Promise<string>>();
-function load(accountId: string, url: string) {
-  const hit = loaded.get(url);
+function load(accountId: string, url: string, max = 0) {
+  const key = max ? `${url}#${max}` : url;
+  const hit = loaded.get(key);
   if (hit) {
-    loaded.delete(url);
-    loaded.set(url, hit);
+    loaded.delete(key);
+    loaded.set(key, hit);
     return hit;
   }
   // through the server: it AES-decrypts E2EE blobs, and fetches the rest without CORS in the way
   const p = apiBlob(`/accounts/${accountId}/image?url=${encodeURIComponent(url)}`)
-    .then(async (blob) => URL.createObjectURL(!isJxl(url) ? blob : (await showsJxl()) ? new Blob([blob], { type: "image/jxl" }) : await decodeJxl(await blob.arrayBuffer())))
+    .then(async (blob) => {
+      if (!isJxl(url)) return URL.createObjectURL(blob);
+      // a webview without OffscreenCanvas in workers (older macOS) shows it the way it shows a full photo
+      const small = max ? await decodeJxl(await blob.arrayBuffer(), max).catch(() => null) : null;
+      return URL.createObjectURL(small ?? ((await showsJxl()) ? new Blob([blob], { type: "image/jxl" }) : await decodeJxl(await blob.arrayBuffer())));
+    })
     .catch((e) => {
-      loaded.delete(url);
+      loaded.delete(key);
       throw e;
     });
-  loaded.set(url, p);
+  loaded.set(key, p);
   if (loaded.size > 300) {
     const [oldest, old] = loaded.entries().next().value!;
     loaded.delete(oldest);
@@ -68,21 +77,21 @@ function load(accountId: string, url: string) {
 
 // E2EE media (the AES key rides in the href's e2esession= param) can't go straight into an <img>/<video>, nor can
 // JPEG XL where the webview doesn't decode it: they come through load() as object URLs. Other urls load directly.
-// "" while loading, null when it can't be loaded.
-export function useMediaSrc(accountId: string, url?: string): string | null {
+// max: the JXL photo is shown small (a bubble), scaled down to that many px. "" while loading, null when it can't be loaded.
+export function useMediaSrc(accountId: string, url?: string, max = 0): string | null {
   const direct = !isE2eeMedia(url) && !isJxl(url);
   const [src, setSrc] = useState<string | null>(() => (direct ? (url ?? "") : ""));
   useEffect(() => {
     if (direct) return setSrc(url ?? "");
     let alive = true;
     setSrc("");
-    (isE2eeMedia(url) ? Promise.resolve(false) : showsJxl())
-      .then((native) => (native ? url! : load(accountId, url!)))
+    (isE2eeMedia(url) || max ? Promise.resolve(false) : showsJxl())
+      .then((native) => (native ? url! : load(accountId, url!, max)))
       .then((s) => alive && setSrc(s))
       .catch(() => alive && setSrc(null));
     return () => {
       alive = false;
     };
-  }, [accountId, url]);
+  }, [accountId, url, max]);
   return src;
 }

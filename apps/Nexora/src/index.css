@@ -138,4 +138,24 @@
   html {
     @apply font-sans;
     }
+  /* Windows only (class set in main.tsx): a thin rounded thumb on a clear track, like Linux/macOS overlay bars */
+  .windows ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    }
+  .windows ::-webkit-scrollbar-track,
+  .windows ::-webkit-scrollbar-corner {
+    background: transparent;
+    }
+  .windows ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--foreground) 20%, transparent) padding-box;
+    }
+  .windows ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--foreground) 35%, transparent);
+    }
+  .windows ::-webkit-scrollbar-button {
+    display: none;
+    }
 }

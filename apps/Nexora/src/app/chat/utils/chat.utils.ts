@@ -1,4 +1,4 @@
-import type { ConversationSettings, Thread } from "@/shared/types";
+import type { ConversationSettings, MessageRow, Thread } from "@/shared/types";
 import { GROUP_NOTI, E2EE, NO_SETTINGS } from "@/app/chat/constants/chat.constants";
 
 // chat.recommended bubbles that are neither a link, a contact card nor a call log
@@ -130,3 +130,16 @@ export const fileSize = (bytes: unknown) => {
 
 // "1 giờ", "7 ngày", ... for "Tin nhắn tự xóa"
 export const ttlText = (ms: number) => (ms % 86_400_000 === 0 ? `${ms / 86_400_000} ngày` : ms % 3_600_000 === 0 ? `${ms / 3_600_000} giờ` : `${Math.max(1, Math.round(ms / 60_000))} phút`);
+
+// photos sent together (Zalo's group layout) share a group_layout_id in their params
+const layoutOf = (m: MessageRow) => (m.msgType === "chat.photo" ? String(params(attach(m.content)).group_layout_id ?? "") : "");
+const sameAlbum = (a: MessageRow | undefined, b: MessageRow) => !!a && a.fromUid === b.fromUid && !!layoutOf(b) && layoutOf(a) === layoutOf(b);
+
+// the album starting at rows[i], in id_in_group order; [] when rows[i] belongs to the album above it
+export function albumAt(rows: MessageRow[], i: number): MessageRow[] {
+  if (sameAlbum(rows[i - 1], rows[i])) return [];
+  let end = i + 1;
+  while (end < rows.length && sameAlbum(rows[i], rows[end])) end++;
+  const order = (m: MessageRow) => Number(params(attach(m.content)).id_in_group) || 0;
+  return rows.slice(i, end).sort((a, b) => order(a) - order(b));
+}

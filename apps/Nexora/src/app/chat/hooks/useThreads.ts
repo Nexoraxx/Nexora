@@ -13,7 +13,8 @@ export function useThreads(ids: string[]) {
     const load = (id: string) =>
       api<Thread[]>(`/accounts/${id}/threads`)
         .then((list) => setThreads((m) => ({ ...m, [id]: list })))
-        .catch(() => {});
+        // a failed first load counts as loaded (empty), so the list doesn't keep its skeleton
+        .catch(() => setThreads((m) => (m[id] ? m : { ...m, [id]: [] })));
     const loadSettings = (id: string) =>
       api<ConversationSettings>(`/accounts/${id}/conversations`)
         .then((s) => setSettings((m) => ({ ...m, [id]: s })))
