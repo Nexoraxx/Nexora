@@ -8,7 +8,35 @@ import type IMessageService from '../messages/services/interfaces/message-servic
 import { TemplateRequest } from './dtos/requests/bulk-send.request'
 import BulkSendRepository from './repositories/implements/bulk-send-repository'
 import BulkSendService from './services/implements/bulk-send-service'
-import { missingIn, render, unknownVariables, valuesOf } from './helpers/template.helper'
+import { missingIn, problemsIn, render, unknownVariables, valuesOf } from './helpers/template.helper'
+
+test('template filters: case, words of the name, words per gender, defaults', () => {
+  const lan = valuesOf({ displayName: 'lan nguyễn', zaloName: null, alias: null, gender: 1, phoneNumber: '' }, 'Shop A')
+  const nam = valuesOf({ displayName: 'Nguyễn Văn Nam', zaloName: null, alias: null, gender: 0, phoneNumber: '' }, 'Shop A')
+  const who = valuesOf({ displayName: 'Bình', zaloName: null, alias: null, gender: null, phoneNumber: '' }, 'Shop A')
+  expect(render('{{name|upper}} {{ name | title }} {{name|cap}}', lan)).toBe('LAN NGUYỄN Lan Nguyễn Lan nguyễn')
+  expect(render('{{name|last}} {{name|first|lower}}', nam)).toBe('Nam nguyễn')
+  // the built-in "anh/chị" for an unknown gender goes through the filters too
+  expect(render('{{pronoun|cap}} / {{pronoun|upper}}', who)).toBe('Anh/Chị / ANH/CHỊ')
+  expect(render('{{pronoun|ông/bà}} {{pronoun|Ông/Bà}} {{pronoun | ông/bà | cap}}', nam)).toBe('ông Ông Ông')
+  expect(render('{{pronoun|ông/bà|cap}}', lan)).toBe('Bà')
+  // the order doesn't matter: words are picked, then shaped
+  expect(render('{{pronoun|cap | cô/chú }} {{pronoun | cô/chú | cap}}', lan)).toBe('Cô Cô')
+  expect(render('{{phone|upper|or:chưa có}}', lan)).toBe('CHƯA CÓ')
+  // a pair written female first is read by its words; an unknown pair reads male first
+  expect(render('{{pronoun|chị/anh}} {{pronoun|bà/ông}}', nam)).toBe('anh ông')
+  expect(render('{{pronoun|sếp/sen}}', lan)).toBe('sen')
+  expect(render('{{pronoun|cô/chú|cap}}', who)).toBe('Cô/Chú')
+  expect(render('{{pronoun|ông/bà|cap}}', who)).toBe('Ông/Bà')
+  expect(render('{{phone|or:chưa có số}} {{phone | or: quý khách | upper}}', lan)).toBe('chưa có số QUÝ KHÁCH')
+  // an or: default counts as a value; a gender pair alone doesn't
+  expect(missingIn('{{phone|or:x}} {{pronoun|ông/bà}}', who)).toEqual(['pronoun'])
+  expect(problemsIn('{{name|uper}} {{name|ông/bà}} {{nmae|upper}} {{pronoun|ông/bà}}')).toEqual([
+    'Không có biến {{nmae}}: kiểm tra chính tả, hoặc bấm các nút biến bên dưới ô soạn để chèn',
+    'Không hiểu "uper" trong {{name|uper}}: xem các cách viết trong mục "Muốn viết hoa tên…" bên dưới ô soạn',
+    '"ông/bà" chỉ dùng được với {{pronoun}} (xưng hô theo giới tính), không dùng với {{name}}',
+  ])
+})
 
 test('template: English keys, spaces in braces, fallbacks, unknown keys', () => {
   const lan = valuesOf({ displayName: 'Lan Nguyễn', zaloName: 'lan', alias: 'Lan váy đỏ 0912', gender: 1, phoneNumber: '' }, 'Shop A')

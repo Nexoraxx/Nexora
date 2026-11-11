@@ -10,6 +10,8 @@ import { openViewer } from "@/app/file-viewer/services/file-viewer.service";
 import { fileFromUrl, getExtension } from "@/app/file-viewer/utils/file-viewer.utils";
 import { useMediaSrc } from "@/shared/hooks/use-media";
 import { Img } from "@/shared/components/img";
+import { Skeleton } from "@/shared/components/ui/skeleton";
+import { cn } from "@/shared/utils/shadcn";
 
 const host = (href?: string) => {
   try {
@@ -34,7 +36,22 @@ export function MediaSection({ accountId, base, kind, title, preview }: { accoun
   return (
     <Section title={title}>
       {!items ? (
-        <p className="px-4 py-1 text-xs text-muted-foreground">Đang tải…</p>
+        kind === "media" ? (
+          <div className="grid grid-cols-4 gap-1 px-4" aria-label="Đang tải">
+            {Array.from({ length: preview }, (_, i) => (
+              <Skeleton key={i} className="aspect-square" />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 px-4 py-1" aria-label="Đang tải">
+            {Array.from({ length: Math.min(preview, 3) }, (_, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Skeleton className="size-9 shrink-0" />
+                <Skeleton className={cn("h-3.5", i % 2 ? "w-1/2" : "w-3/4")} />
+              </div>
+            ))}
+          </div>
+        )
       ) : !items.length ? (
         <p className="px-4 py-1 text-xs text-muted-foreground">Chưa có {title} được chia sẻ trong hội thoại này</p>
       ) : kind === "media" ? (
@@ -94,6 +111,7 @@ export function MediaSection({ accountId, base, kind, title, preview }: { accoun
 }
 
 function Thumb({ accountId, url, video }: { accountId: string; url: string; video: boolean }) {
-  const src = useMediaSrc(accountId, url);
+  // a JXL photo's thumb is the full photo: decoded down to the tile
+  const src = useMediaSrc(accountId, url, 256);
   return <Img className="size-full object-cover" src={src} icon={video ? VideoOffIcon : undefined} />;
 }

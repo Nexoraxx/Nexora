@@ -3,7 +3,7 @@ import { PlusIcon } from "lucide-react";
 import { api } from "@/core/http/api";
 import type { Template } from "@/app/bulk-send/models/bulk-send.model";
 import { MUTED } from "@/app/bulk-send/constants/bulk-send.constants";
-import { unknownVariables } from "@/app/bulk-send/utils/bulk-send.utils";
+import { problemsIn } from "@/app/bulk-send/utils/bulk-send.utils";
 import { VariableTextarea } from "@/app/bulk-send/components/variable-textarea";
 import { Confirm } from "@/shared/components/dialogs/confirm-dialog";
 import type { Ask } from "@/shared/models/dialog.model";
@@ -68,7 +68,7 @@ export function Templates() {
               Xoá
             </Button>
           )}
-          <Button disabled={!draft.name.trim() || !draft.body.trim() || unknownVariables(draft.body).length > 0} onClick={save}>
+          <Button disabled={!draft.name.trim() || !draft.body.trim() || problemsIn(draft.body).length > 0} onClick={save}>
             Lưu
           </Button>
         </div>

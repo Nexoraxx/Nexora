@@ -8,11 +8,11 @@ import { splitMentions } from "@/shared/utils/text.utils";
 import type { TextStyle } from "@/shared/models/text.model";
 import { attach, CALL_LOGS, callLog, fileSize, params, summary } from "@/app/chat/utils/chat.utils";
 import { E2EE } from "@/app/chat/constants/chat.constants";
-import { useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { LinkIcon, ListChecksIcon, LockIcon, MapPinIcon, MicOffIcon, PhoneIncomingIcon, PhoneMissedIcon, PhoneOutgoingIcon, StickerIcon, VideoIcon, VideoOffIcon } from "lucide-react";
 import { Img, Placeholder } from "@/shared/components/img";
 import { cn } from "@/shared/utils/shadcn";
-import { useMediaSrc } from "@/shared/hooks/use-media";
+import { isE2eeMedia, useMediaSrc } from "@/shared/hooks/use-media";
 import { FileBubble } from "@/app/file-viewer/components/bubble/file-bubble";
 import { openViewer } from "@/app/file-viewer/services/file-viewer.service";
 import { fileFromUrl, getExtension } from "@/app/file-viewer/utils/file-viewer.utils";
@@ -20,6 +20,13 @@ import { fileFromUrl, getExtension } from "@/app/file-viewer/utils/file-viewer.u
 // Zalo PC's sticker image endpoint; the built-in "Củ hành" set (category 0) lives on its static domain
 const stickerImage = (id: unknown, catId?: unknown) =>
   catId === 0 ? `https://stc-chat.zdn.vn/images/stickers/default/${id}.gif` : `https://api.zaloapp.com/api/emoticon/sticker/webpc?size=130&eid=${id}`;
+
+// a photo in a bubble fits 280 × 320 px (max-w-70 max-h-80); decoded at about twice that for sharp screens
+const BUBBLE_W = 280;
+const BUBBLE_H = 320;
+const BUBBLE_PX = 640;
+// photos an album bubble shows before "+N"
+const ALBUM_MAX = 9;
 
 const CARD = "flex max-w-80 items-center gap-2 rounded-md border bg-white dark:bg-card dark:border-border/60 px-3 py-1.5 text-left";
 const FILE = `${CARD} hover:bg-muted`;
@@ -74,7 +81,7 @@ export function Content({
     case "chat.photo":
     case "chat.gif":
     case "chat.doodle":
-      return <Photo accountId={me} href={c.href} thumb={c.thumb} />;
+      return <Photo accountId={me} href={c.href} thumb={c.thumb} width={Number(params(c).width) || 0} height={Number(params(c).height) || 0} />;
     case "chat.sticker":
       return <Img className="size-30" fallbackClassName="rounded-md" src={stickerImage(c.id, c.catId)} alt="sticker" icon={StickerIcon} />;
     case "chat.video.msg":
@@ -167,19 +174,80 @@ export function Content({
 
 // E2EE photos/videos/voice are AES-encrypted blobs: useMediaSrc fetches them through the decrypting proxy; plaintext
 // urls pass straight through. A hook can't live inside the switch, so media gets its own components.
-function Photo({ accountId, href, thumb }: { accountId: string; href?: string; thumb?: string }) {
-  const url = href || thumb;
-  const src = useMediaSrc(accountId, url);
-  return <Img className="max-h-80 max-w-70 cursor-pointer rounded-md bg-muted" fallbackClassName="size-40" src={url ? src : null} onClick={() => url && openViewer({ ...fileFromUrl(url), accountId })} />;
+function Photo({ accountId, href, thumb, cell, width = 0, height = 0 }: { accountId: string; href?: string; thumb?: string; cell?: boolean; width?: number; height?: number }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const near = useNear(box);
+  // the bubble shows the thumbnail, scaled down when it's a JXL (whose thumb is the full photo), the viewer the full
+  // photo. E2EE photos keep href: the AES key rides in its e2esession= param
+  const url = isE2eeMedia(href) ? href : thumb || href;
+  const full = href || thumb;
+  const src = useMediaSrc(accountId, near ? url : undefined, BUBBLE_PX);
+  // an expired or undecodable photo: the bubble shrinks to the placeholder tile instead of keeping the photo's box
+  const [brokenSrc, setBrokenSrc] = useState<string>();
+  const failed = !url || src === null || (!!src && brokenSrc === src);
+  // its box is sized from the photo's own dimensions before it loads: the skeleton has its shape and nothing jumps
+  const scale = width && height ? Math.min(1, BUBBLE_W / width, BUBBLE_H / height) : 0;
+  const sized = !cell && !failed && scale > 0;
+  return (
+    <span ref={box} className={cn("block", cell ? "size-full" : !sized && "min-h-20 min-w-20")} style={sized ? { width: Math.round(width * scale), height: Math.round(height * scale) } : undefined}>
+      <Img
+        className={cn("cursor-pointer rounded-md", cell ? "aspect-square size-full object-cover" : sized ? "size-full object-cover" : "max-h-80 max-w-70 min-h-20 min-w-20 object-cover")}
+        fallbackClassName={cell ? undefined : "size-40"}
+        caption
+        src={url ? src : null}
+        decoding="async"
+        onError={() => setBrokenSrc(src || undefined)}
+        onClick={() => full && openViewer({ ...fileFromUrl(full), accountId })}
+      />
+    </span>
+  );
+}
+
+// true once the element has come into view (it stays true): a photo is fetched and decoded only when shown
+function useNear(ref: RefObject<HTMLElement | null>) {
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (near || !ref.current) return;
+    const io = new IntersectionObserver(([e]) => e.isIntersecting && setNear(true), { rootMargin: "400px" });
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, [near]);
+  return near;
+}
+
+// Zalo's album bubble: photos sent together as one grid, 2 per row for 2 or 4, else 3. A big album shows its first
+// ALBUM_MAX with "+N" on the last; that cell opens the rest in place.
+export function Album({ photos, me }: { photos: MessageRow[]; me: string }) {
+  const [open, setOpen] = useState(false);
+  const cut = !open && photos.length > ALBUM_MAX;
+  const shown = cut ? photos.slice(0, ALBUM_MAX) : photos;
+  const cols = photos.length === 2 || photos.length === 4 ? "grid-cols-2" : "grid-cols-3";
+  return (
+    <div className={cn("grid w-80 max-w-full gap-1", cols)}>
+      {shown.map((p, i) => {
+        const c = attach(p.content);
+        const photo = <Photo key={p.msgId} accountId={me} href={c.href} thumb={c.thumb} cell />;
+        if (!cut || i < ALBUM_MAX - 1) return photo;
+        return (
+          <div key={p.msgId} className="relative">
+            {photo}
+            <button className="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 text-xl font-semibold text-white" onClick={() => setOpen(true)}>
+              +{photos.length - ALBUM_MAX + 1}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function Media({ kind, accountId, href, thumb }: { kind: "video" | "audio"; accountId: string; href?: string; thumb?: string }) {
   const src = useMediaSrc(accountId, href);
-  const poster = useMediaSrc(accountId, thumb);
+  const poster = useMediaSrc(accountId, thumb, BUBBLE_PX);
   const [broken, setBroken] = useState(false);
   if (!href || src === null || broken)
     return kind === "video" ? (
-      <Placeholder icon={VideoOffIcon} label="Không phát được video" className="size-40 rounded-md" />
+      <Placeholder icon={VideoOffIcon} label="Không phát được video" caption className="size-40 rounded-md" />
     ) : (
       <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
         <MicOffIcon className="size-3.5" /> Không phát được tin nhắn thoại

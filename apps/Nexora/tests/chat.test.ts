@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { NO_SETTINGS } from "../src/app/chat/constants/chat.constants";
-import { callLog, summary, unreadCount } from "../src/app/chat/utils/chat.utils";
-import type { Thread } from "../src/shared/types";
+import { albumAt, callLog, summary, unreadCount } from "../src/app/chat/utils/chat.utils";
+import type { MessageRow, Thread } from "../src/shared/types";
 
 const thread = (threadId: string, unread: number) => ({ threadId, unread }) as Thread;
 
@@ -30,4 +30,15 @@ test("call logs: Zalo PC's titles, texts and list labels (r6Qt / 4eSn)", () => {
   // the thread list doesn't know the direction: PC's reading (incoming)
   expect(summary("chat.recommended", log("recommened.misscall", { calltype: 1 }))).toBe("[Cuộc gọi video nhỡ]");
   expect(callLog(log("recommened.calltime", { duration: 3725 }), true).text).toBe("1 giờ 2 phút 5 giây");
+});
+
+test("albums: photos sharing a group_layout_id from one sender render once, in id_in_group order", () => {
+  const photo = (msgId: string, layout?: string, idx?: number, fromUid = "u") =>
+    ({ msgId, fromUid, msgType: "chat.photo", content: { params: JSON.stringify(layout ? { group_layout_id: layout, id_in_group: idx } : {}) } }) as MessageRow;
+  const rows = [photo("a"), photo("b", "L", 1), photo("c", "L", 0), photo("d", "L", 2, "other"), photo("e")];
+  expect(albumAt(rows, 0).map((m) => m.msgId)).toEqual(["a"]);
+  expect(albumAt(rows, 1).map((m) => m.msgId)).toEqual(["c", "b"]);
+  expect(albumAt(rows, 2)).toEqual([]);
+  expect(albumAt(rows, 3).map((m) => m.msgId)).toEqual(["d"]);
+  expect(albumAt(rows, 4).map((m) => m.msgId)).toEqual(["e"]);
 });

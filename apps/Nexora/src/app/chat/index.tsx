@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { NO_SETTINGS } from "@/app/chat/constants/chat.constants";
 import { api } from "@/core/http/api";
 import type { Account, ChatTarget, ConversationSettings, MessageRow, MyCloud, Thread } from "@/shared/types";
@@ -19,6 +19,7 @@ import { SearchInput } from "@/shared/components/search-input";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
+import { Skeleton } from "@/shared/components/ui/skeleton";
 import { cn } from "@/shared/utils/shadcn";
 import { fold } from "@/shared/utils/text.utils";
 
@@ -90,6 +91,15 @@ export function Chat({
   // the account the open conversation is chatted from
   const targetAccount = target && (target.accountId ?? accounts[0].id);
   const isTarget = (t: Row) => t.threadId === target?.threadId && t.accountId === targetAccount;
+  // what the rows do, behind a ref that keeps its identity: a row re-renders only when its own data changes
+  const actions: RowActions = {
+    open: onOpen,
+    menu: setMenuFor,
+    run,
+    dialog: (kind, thread) => setDialog({ kind, thread }),
+  };
+  const act = useRef(actions);
+  act.current = actions;
 
   // PC clears an unread mark when the conversation is opened, but not one set while it is already open
   const checked = useRef<string>(undefined);
@@ -104,19 +114,26 @@ export function Chat({
   // labels belong to one account, so "Tất cả" filters by unread only
   const label = typeof filter === "number" ? settingsOf(accounts[0].id).labels.find((l) => l.id === filter) : undefined;
   const q = fold(search.trim());
-  const shown = accounts
-    .flatMap((a) => (threads[a.id] ?? []).map((t): Row => ({ ...t, accountId: a.id })))
-    .filter((t) => {
-      const s = settingsOf(t.accountId);
-      // hidden conversations stay out of the list (one opened with the PIN stays while open)
-      if (s.hidden.includes(t.threadId) && !isTarget(t)) return false;
-      if (all && searching) return fold(t.name ?? "").includes(q);
-      if (s.archived.includes(t.threadId) !== (section === "other")) return false;
-      return filter === "unread" ? t.unread > 0 || s.unread.includes(t.threadId) : label ? label.conversations.includes(t.threadId) : true;
-    })
-    // newest first across accounts, then pinned first; the sort is stable, so each part stays newest first
-    .sort((a, b) => b.messageTime - a.messageTime)
-    .sort((a, b) => Number(settingsOf(b.accountId).pinned.includes(b.threadId)) - Number(settingsOf(a.accountId).pinned.includes(a.threadId)));
+  // recomputed only when its inputs change: typing in a conversation or opening a menu doesn't re-sort the list
+  const shown = useMemo(() => {
+    const pinned = new Map(accounts.map((a) => [a.id, new Set(settingsOf(a.id).pinned)]));
+    const isPinned = (t: Row) => Number(pinned.get(t.accountId)?.has(t.threadId) ?? false);
+    return (
+      accounts
+        .flatMap((a) => (threads[a.id] ?? []).map((t): Row => ({ ...t, accountId: a.id })))
+        .filter((t) => {
+          const s = settingsOf(t.accountId);
+          // hidden conversations stay out of the list (one opened with the PIN stays while open)
+          if (s.hidden.includes(t.threadId) && !isTarget(t)) return false;
+          if (all && searching) return fold(t.name ?? "").includes(q);
+          if (s.archived.includes(t.threadId) !== (section === "other")) return false;
+          return filter === "unread" ? t.unread > 0 || s.unread.includes(t.threadId) : label ? label.conversations.includes(t.threadId) : true;
+        })
+        // newest first across accounts, then pinned first; the sort is stable, so each part stays newest first
+        .sort((a, b) => b.messageTime - a.messageTime)
+        .sort((a, b) => isPinned(b) - isPinned(a))
+    );
+  }, [accounts, threads, settingsBy, target?.threadId, targetAccount, all, searching, q, section, filter, label]);
   const dialogAccount = dialog?.thread?.accountId ?? accounts[0].id;
   const tab = (key: typeof section, text: string) => (
     <button
@@ -265,80 +282,31 @@ export function Chat({
             ) : (
               <div className="flex-1 overflow-y-auto px-1.5 py-1.5">
               {shown.map((t) => {
-                const s = settingsOf(t.accountId);
                 const key = `${t.accountId}:${t.threadId}`;
-                const tag = labelOf(s, t.threadId);
-                const dot = !t.unread && s.unread.includes(t.threadId);
-                const muted = t.threadId in s.muted;
                 return (
-                  <div
+                  <ThreadItem
                     key={key}
-                    className={cn("group/row relative flex items-center rounded-lg hover:bg-muted", isTarget(t) && "bg-primary/10 hover:bg-primary/10")}
-                    onContextMenu={(e) => (e.preventDefault(), setMenuFor(key))}
-                  >
-                    <button
-                      className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-2 text-left"
-                      onClick={() => onOpen({ threadId: t.threadId, isGroup: t.isGroup, name: t.name, avatar: t.avatar, accountId: t.accountId })}
-                    >
-                      <Avatar src={t.avatar} name={t.name ?? "?"} size={44} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex justify-between gap-2">
-                          <span className={cn("truncate inline-flex items-center gap-1", (t.unread || dot) && "font-semibold")}>
-                            {t.name ?? t.threadId}
-                            {t.e2ee && (
-                              <span title="Đã mã hóa đầu cuối" className="inline-flex items-center">
-                                <LockIcon className="size-3 text-emerald-600 shrink-0" />
-                              </span>
-                            )}
-                          </span>
-                          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3">
-                            {muted && <BellOffIcon />}
-                            {s.pinned.includes(t.threadId) && <PinIcon />}
-                            {time(t.messageTime)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={cn("truncate text-[13px]", t.unread || dot ? "font-semibold" : "text-muted-foreground")}>
-                            {tag && <span className="mr-1 inline-block size-2.5 rounded-sm align-middle" title={tag.text} style={{ background: tag.color }} />}
-                            {t.fromUid === t.accountId ? "Bạn: " : t.isGroup && t.dName ? `${t.dName}: ` : ""}
-                            <RichText text={summary(t.msgType, t.content)} />
-                          </span>
-                          {all && <span className="ml-auto flex shrink-0">{tagOf(t.accountId)}</span>}
-                          {t.unread > 0 && <Badge className={cn("text-white", muted ? "bg-gray-400" : "bg-red-500")}>{t.unread > 99 ? "99+" : t.unread}</Badge>}
-                          {/* a mark shows a dot without a count, grey when muted */}
-                          {dot && <span className={cn("size-2.5 shrink-0 rounded-full", muted ? "bg-gray-400" : "bg-red-500")} />}
-                        </div>
-                      </div>
-                    </button>
-                    <DropdownMenu open={menuFor === key} onOpenChange={(open) => setMenuFor(open ? key : undefined)}>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-xs" className={cn("absolute top-2 right-2 bg-background shadow-xs", menuFor !== key && "invisible group-hover/row:visible")} title="Thêm">
-                          <EllipsisIcon />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-56" align="end">
-                        <ConversationMenuItems
-                          accountId={t.accountId}
-                          threadId={t.threadId}
-                          isGroup={t.isGroup}
-                          unread={t.unread > 0}
-                          settings={s}
-                          run={run}
-                          onDialog={(kind) => setDialog({ kind, thread: t })}
-                        />
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                    t={t}
+                    s={settingsOf(t.accountId)}
+                    active={isTarget(t)}
+                    menuOpen={menuFor === key}
+                    accounts={all ? accounts : undefined}
+                    act={act}
+                  />
                 );
               })}
-              {!shown.length && (
-                <p className="px-6 py-10 text-center text-xs text-muted-foreground">
-                  {!searching && section === "other" && filter === "all"
-                    ? "Tách riêng các trò chuyện không ưu tiên"
-                    : accounts.some((a) => threads[a.id]?.length)
-                      ? "Không có hội thoại"
-                      : "Chưa có hội thoại"}
-                </p>
+              {!shown.length && accounts.some((a) => !threads[a.id]) ? (
+                <ThreadSkeletons />
+              ) : (
+                !shown.length && (
+                  <p className="px-6 py-10 text-center text-xs text-muted-foreground">
+                    {!searching && section === "other" && filter === "all"
+                      ? "Tách riêng các trò chuyện không ưu tiên"
+                      : accounts.some((a) => threads[a.id]?.length)
+                        ? "Không có hội thoại"
+                        : "Chưa có hội thoại"}
+                  </p>
+                )
               )}
             </div>
             )}
@@ -390,6 +358,112 @@ export function Chat({
           <p>Chọn một hội thoại ở danh sách bên trái để bắt đầu</p>
         </div>
       )}
+    </div>
+  );
+}
+
+type RowActions = {
+  open: (t: ChatTarget) => void;
+  menu: (key: string | undefined) => void;
+  run: (p: Promise<unknown>) => void;
+  dialog: (kind: "hide" | "delete" | "labels" | "hiddenSettings", thread: Row) => void;
+};
+type ItemProps = {
+  t: Row;
+  s: ConversationSettings;
+  active: boolean;
+  menuOpen: boolean;
+  // "Tất cả": every account, for the row's account tag
+  accounts?: Account[];
+  act: RefObject<RowActions>;
+};
+
+// rows are rebuilt ({ ...thread, accountId }) on every list computation: compared field by field
+const sameItem = (a: ItemProps, b: ItemProps) =>
+  (Object.keys(a) as (keyof ItemProps)[]).every((k) =>
+    k === "t" ? (Object.keys(a.t) as (keyof Row)[]).every((f) => a.t[f] === b.t[f]) && Object.keys(a.t).length === Object.keys(b.t).length : a[k] === b[k],
+  );
+
+const ThreadItem = memo(function ThreadItem({ t, s, active, menuOpen, accounts, act }: ItemProps) {
+  const key = `${t.accountId}:${t.threadId}`;
+  const tag = labelOf(s, t.threadId);
+  const dot = !t.unread && s.unread.includes(t.threadId);
+  const muted = t.threadId in s.muted;
+  return (
+    <div
+      className={cn("offscreen-skip group/row relative flex items-center rounded-lg hover:bg-muted", active && "bg-primary/10 hover:bg-primary/10")}
+      onContextMenu={(e) => (e.preventDefault(), act.current.menu(key))}
+    >
+      <button
+        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-2 text-left"
+        onClick={() => act.current.open({ threadId: t.threadId, isGroup: t.isGroup, name: t.name, avatar: t.avatar, accountId: t.accountId })}
+      >
+        <Avatar src={t.avatar} name={t.name ?? "?"} size={44} />
+        <div className="min-w-0 flex-1">
+          <div className="flex justify-between gap-2">
+            <span className={cn("truncate inline-flex items-center gap-1", (t.unread || dot) && "font-semibold")}>
+              {t.name ?? t.threadId}
+              {t.e2ee && (
+                <span title="Đã mã hóa đầu cuối" className="inline-flex items-center">
+                  <LockIcon className="size-3 text-emerald-600 shrink-0" />
+                </span>
+              )}
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3">
+              {muted && <BellOffIcon />}
+              {s.pinned.includes(t.threadId) && <PinIcon />}
+              {time(t.messageTime)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className={cn("truncate text-[13px]", t.unread || dot ? "font-semibold" : "text-muted-foreground")}>
+              {tag && <span className="mr-1 inline-block size-2.5 rounded-sm align-middle" title={tag.text} style={{ background: tag.color }} />}
+              {t.fromUid === t.accountId ? "Bạn: " : t.isGroup && t.dName ? `${t.dName}: ` : ""}
+              <RichText text={summary(t.msgType, t.content)} />
+            </span>
+            {accounts && <span className="ml-auto flex shrink-0">{accountTag(accounts, t.accountId)}</span>}
+            {t.unread > 0 && <Badge className={cn("text-white", muted ? "bg-gray-400" : "bg-red-500")}>{t.unread > 99 ? "99+" : t.unread}</Badge>}
+            {/* a mark shows a dot without a count, grey when muted */}
+            {dot && <span className={cn("size-2.5 shrink-0 rounded-full", muted ? "bg-gray-400" : "bg-red-500")} />}
+          </div>
+        </div>
+      </button>
+      <DropdownMenu open={menuOpen} onOpenChange={(open) => act.current.menu(open ? key : undefined)}>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-xs" className={cn("absolute top-2 right-2 bg-background shadow-xs", !menuOpen && "invisible group-hover/row:visible")} title="Thêm">
+            <EllipsisIcon />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-56" align="end">
+          <ConversationMenuItems
+            accountId={t.accountId}
+            threadId={t.threadId}
+            isGroup={t.isGroup}
+            unread={t.unread > 0}
+            settings={s}
+            run={(p) => act.current.run(p)}
+            onDialog={(kind) => act.current.dialog(kind, t)}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}, sameItem);
+
+// the conversation list's shape while the first page loads: avatar, name and last-message lines of varied width
+const SKELETON_ROWS = ["w-3/5", "w-2/5", "w-1/2", "w-3/4", "w-2/5", "w-3/5", "w-1/2"];
+function ThreadSkeletons() {
+  return (
+    <div className="flex flex-col" aria-label="Đang tải hội thoại">
+      {SKELETON_ROWS.map((w, i) => (
+        <div key={i} className="flex items-center gap-2.5 px-2 py-2">
+          <Skeleton className="size-11 shrink-0 rounded-full" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <Skeleton className={cn("h-3.5", w)} />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

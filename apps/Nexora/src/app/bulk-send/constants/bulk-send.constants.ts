@@ -1,13 +1,50 @@
 import type { RecipientState, RunState } from "@/app/bulk-send/models/bulk-send.model";
 
 // same keys as the server's (modules/bulk-sends/services/implements/template.ts VARIABLES), which refuses others
+// example: what the sample customer (SAMPLE) gets; note: what to know before using it
 export const VARIABLES = [
-  { key: "name", label: "Tên Zalo của khách", example: "Lan Nguyễn" },
-  { key: "alias", label: "Tên gợi nhớ bạn đặt", example: "Lan váy đỏ" },
-  { key: "pronoun", label: "anh / chị theo giới tính", example: "chị" },
-  { key: "phone", label: "Số điện thoại", example: "0912 345 678" },
-  { key: "me", label: "Tên tài khoản đang gửi", example: "Shop A" },
+  { key: "name", label: "Tên Zalo của khách", example: "Nguyễn Thị Lan", note: "tên khách tự đặt trên Zalo" },
+  { key: "alias", label: "Tên gợi nhớ bạn đặt", example: "Lan váy đỏ", note: "chưa đặt thì dùng tên Zalo" },
+  { key: "pronoun", label: "Xưng hô theo giới tính", example: "chị", note: "nam: anh, nữ: chị, không rõ: anh/chị" },
+  { key: "phone", label: "Số điện thoại", example: "0912 345 678", note: "trống nếu khách ẩn số" },
+  { key: "me", label: "Tên tài khoản đang gửi", example: "Shop A", note: "tên Zalo của bạn" },
 ] as const;
+// {{key | filter}}: same as the server's (modules/bulk-sends/helpers/template.helper.ts), which refuses others.
+// Shown as "you write → the customer reads" for one sample customer (SAMPLE). insert: what a click adds; key: the
+// variable a click starts when the caret isn't on one
+export const SAMPLE = "Nguyễn Thị Lan, nữ";
+export const FILTER_GROUPS = [
+  {
+    title: "Viết hoa, viết thường",
+    rows: [
+      { insert: "cap", label: "Viết hoa chữ đầu", key: "pronoun", write: "{{pronoun | cap}}", result: "Chị", note: "viết hoa chữ đầu, hợp để mở đầu câu" },
+      { insert: "upper", label: "Viết hoa tất cả", key: "name", write: "{{name | upper}}", result: "NGUYỄN THỊ LAN", note: "viết hoa tất cả" },
+      { insert: "title", label: "Viết hoa đầu mỗi chữ", key: "name", write: "{{name | title}}", result: "Nguyễn Thị Lan", note: "viết hoa đầu mỗi chữ, kể cả khi tên Zalo viết thường" },
+      { insert: "lower", label: "Viết thường tất cả", key: "name", write: "{{name | lower}}", result: "nguyễn thị lan", note: "viết thường tất cả" },
+    ],
+  },
+  {
+    title: "Chỉ lấy một phần của tên",
+    rows: [
+      { insert: "last", label: "Chỉ lấy tên gọi", key: "name", write: "{{name | last}}", result: "Lan", note: "chữ cuối, thường là tên gọi" },
+      { insert: "first", label: "Chỉ lấy chữ đầu", key: "name", write: "{{name | first}}", result: "Nguyễn", note: "chữ đầu tiên" },
+    ],
+  },
+  {
+    title: "Xưng hô theo giới tính",
+    rows: [
+      { insert: "ông/bà", label: "Xưng ông / bà", key: "pronoun", write: "{{pronoun | ông/bà}}", result: "bà", note: "khách nam ra ông, nữ ra bà, không rõ ra ông/bà" },
+      { insert: "cô/chú", label: "Cặp xưng hô khác", key: "pronoun", write: "{{pronoun | cô/chú}}", result: "cô", note: "cô/chú hay chú/cô đều hiểu; cặp lạ thì chữ trước cho nam" },
+    ],
+  },
+  {
+    title: "Khi khách thiếu thông tin",
+    rows: [{ insert: "or:chưa có số", label: "Chữ thay khi trống", key: "phone", write: "{{phone | or:chưa có số}}", result: "chưa có số", note: "khách không có số điện thoại thì dùng chữ này" }],
+  },
+] as const;
+// the case and word filters by name; "or:…" and "nam/nữ" pairs are shapes
+export const CASE_FILTERS = ["upper", "lower", "cap", "title", "first", "last"];
+
 // what a missing value turns into
 export const MISSING_AS: Record<string, string> = { pronoun: 'thành "anh/chị"' };
 
